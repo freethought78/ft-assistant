@@ -33,9 +33,26 @@ Last updated: 2026-11-17
    - It appears automatically the **first time the software is installed**, so a harness is
      always chosen before the keyword is used.
    - Saying "Assistant setup" reopens it any time.
+   - **The screen itself tells the user how to get back to it,** using the key they actually
+     have, e.g. "To open this screen again, hold Caps Lock and say 'Assistant setup'."
+     That key is called the **Assistant key** in the UI and docs.
    - The user picks **OpenCode** (free) or **Claude Code** (with a subscription, or by preference).
    - If the chosen harness isn't installed, the screen tells the user and helps them install it.
      **Nothing is downloaded automatically** outside this screen.
+   - **Reassign the Assistant key:** a button on the screen starts capture; the next key press
+     or mouse button press becomes the Assistant key. Easy to change again at any time.
+     - **Any keyboard key** is allowed (Caps Lock is only the default suggestion).
+     - **Any extra mouse button** is allowed (side buttons, Fn buttons, etc.).
+     - **Left, right and middle click are refused**, with a short message saying why.
+     - **The scroll wheel is refused too** (wheel up/down and tilt left/right).
+     - **The screen gives guidance** next to the capture button (draft wording, to refine):
+       - *Good choices:* Caps Lock, Scroll Lock, Pause, Insert, the Menu key, F13–F24 if your
+         keyboard has them, or a spare side button on your mouse. Pick one you can hold
+         comfortably while speaking.
+       - *Best avoided:* letters, numbers, Space, Enter, Tab, Backspace and arrows (you need them
+         to type); Shift, Ctrl, Alt and the Windows/Super key (used in shortcuts); Esc and
+         Print Screen (other programs use them).
+       - Choosing a "best avoided" key shows a short warning and asks to confirm; it's still allowed.
 8. **Only two harnesses for now: Claude Code and OpenCode.** OpenCode is the free option for users
    who can't or don't want to pay for Claude Code. Considered and set aside for now (2026-11-17):
    Google Antigravity (free plan with weekly limits) and Kilo Desktop (beta). Gemini CLI and
@@ -101,7 +118,7 @@ Last updated: 2026-11-17
     - `.sh`: Windows can't run it.
     - One "actually portable" executable (Cosmopolitan) that runs on both: exotic, larger,
       needs a `.exe` name on Windows, and antivirus tools tend to flag it.
-- **Trigger key: maybe Caps Lock instead of mouse button 12.** (This reverses an earlier
+- **Assistant key: maybe Caps Lock instead of mouse button 12.** (This reverses an earlier
   decision; mouse button 12 isn't usable on Windows.) If adopted: Caps Lock must never be left
   on after dictating. Preferably the key press is swallowed so caps never toggles; otherwise
   the tool resets it after each use. Hold-to-talk also has to ignore the key's auto-repeat.
