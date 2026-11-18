@@ -71,14 +71,20 @@ Last updated: 2026-11-17
    Google Antigravity (free plan with weekly limits) and Kilo Desktop (beta). Gemini CLI and
    Qwen Code no longer have free tiers. Adding more later should stay possible.
 
+### More decisions (2026-11-17)
+
+9. **Already in a harness terminal, "Assistant, …" types and sends** (presses Enter).
+   "Assistant" means "run this". Plain dictation without the keyword still only types, so the
+   user can review before sending.
+10. **Permission prompts are answered by keyboard only.** When an agent asks to approve a risky
+    action, the user presses the key themselves; voice never approves anything, so a misheard
+    word can't authorize an action. (Claude Code's default auto mode keeps these prompts rare.)
+11. **Terminal: the system default.** Linux: the desktop's default terminal (here GNOME
+    Terminal). Windows: Windows Terminal if installed, otherwise the standard console.
+
 ### Open questions
 
-- **Already in a harness terminal, saying "Assistant, …":** type and also send (press Enter),
-  or type only? (Asked 2026-11-17, not yet answered.)
-- **Permission prompts by voice:** both CLIs ask before risky actions (a menu you answer with
-  keys). Should the user be able to answer those by voice, or by keyboard only?
-- **Which terminal window** to open on each system (Linux: the system's default terminal;
-  Windows: Windows Terminal if present, else PowerShell's console).
+None right now.
 
 ### Technical findings (checked 2026-11-17 on Linux)
 
@@ -252,11 +258,17 @@ Hold-to-talk also has to ignore the key's auto-repeat.
      script's Windows and Linux parts, before Python exists. Sizes come from a tiny manifest on
      the GitHub release (a few KB), or built-in estimates if offline.
 
+### More decisions (2026-11-17)
+
+9. **Already in a harness terminal, "Assistant, …" types and sends** (presses Enter).
+   "Assistant" means "run this". Plain dictation without the keyword still only types, so the
+   user can review before sending.
+10. **Permission prompts are answered by keyboard only.** When an agent asks to approve a risky
+    action, the user presses the key themselves; voice never approves anything, so a misheard
+    word can't authorize an action. (Claude Code's default auto mode keeps these prompts rare.)
+11. **Terminal: the system default.** Linux: the desktop's default terminal (here GNOME
+    Terminal). Windows: Windows Terminal if installed, otherwise the standard console.
+
 ### Open questions
 
-- **Already in a harness terminal, saying "Assistant, …":** type and also send (press Enter),
-  or type only? (Asked 2026-11-17, not yet answered.)
-- **Permission prompts by voice:** both CLIs ask before risky actions (a menu you answer with
-  keys). Should the user be able to answer those by voice, or by keyboard only?
-- **Which terminal window** to open on each system (Linux: the system's default terminal;
-  Windows: Windows Terminal if present, else PowerShell's console).
+None right now.
