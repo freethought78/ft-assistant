@@ -33,6 +33,8 @@ if IS_WINDOWS:                       # PowerShell commands, run in a new console
     }
 INSTALL_SIZES = {"claude": "about 350 MB", "opencode": "about 400 MB"}
 
+PRIVACY_NOTE_DICTATION_ONLY = ("Everything stays on this computer: nothing you say is sent "
+                               "anywhere.")
 PRIVACY_NOTE = ("Normal dictation never leaves this computer. Requests that start with "
                 "\"Assistant\" are sent to the assistant's online AI service (Anthropic for "
                 "Claude Code, OpenCode's model provider for OpenCode).")
@@ -147,9 +149,16 @@ class SetupWindow:
         # ---- assistant choice
         ttk.Label(f, text="Assistant", style="Head.TLabel").grid(row=r, sticky="w")
         r += 1
-        self.harness_var = tk.StringVar(value=settings.harness)
+        initial = settings.harness
+        if first_run and not any(harness.find_exe(h) for h in harness.HARNESSES.values()):
+            initial = config.DICTATION_ONLY   # nothing to send requests to yet: suggest typing only
+        self.harness_var = tk.StringVar(value=initial)
         self.status = {}
         self.install_btn = {}
+        ttk.Radiobutton(f, text="Dictation only: just typing, no assistant",
+                        value=config.DICTATION_ONLY, variable=self.harness_var,
+                        command=self._refresh).grid(row=r, sticky="w", pady=2)
+        r += 1
         for key, label in (("opencode", "OpenCode: free"),
                            ("claude", "Claude Code: needs a Claude subscription")):
             row = ttk.Frame(f)
@@ -163,8 +172,8 @@ class SetupWindow:
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
-        ttk.Label(f, text=PRIVACY_NOTE, wraplength=520, style="Note.TLabel").grid(
-            row=r, sticky="w", pady=(4, 14))
+        self.privacy = ttk.Label(f, text=PRIVACY_NOTE, wraplength=520, style="Note.TLabel")
+        self.privacy.grid(row=r, sticky="w", pady=(4, 14))
         r += 1
 
         # ---- Assistant key
@@ -242,7 +251,10 @@ class SetupWindow:
                 self.install_btn[key].grid_remove()
             else:
                 self.install_btn[key].grid()
-        chosen = self.harness_var.get() in config.HARNESSES
+        choice = self.harness_var.get()
+        self.privacy.configure(text=PRIVACY_NOTE_DICTATION_ONLY if choice == config.DICTATION_ONLY
+                               else PRIVACY_NOTE)
+        chosen = choice in config.CHOICES
         self.save_btn.configure(state="normal" if chosen and not self.capturing else "disabled")
 
     # ---- installing a harness
@@ -404,9 +416,11 @@ class SetupWindow:
 
     def _save(self):
         new = config.Settings(self.harness_var.get(), dict(self.trigger))
-        if new.harness not in config.HARNESSES:
+        if new.harness not in config.CHOICES:
             return
-        if not harness.find_exe(harness.HARNESSES[new.harness]) and not messagebox.askyesno(
+        # Dictation only needs no assistant, so there's nothing to check or ask about.
+        if new.uses_assistant and not harness.find_exe(harness.HARNESSES[new.harness]) \
+                and not messagebox.askyesno(
                 "Not installed",
                 f"{harness.HARNESSES[new.harness].name} isn't installed yet, so \"Assistant\" "
                 "requests won't work until it is. Save anyway?", parent=self.root):
@@ -417,7 +431,7 @@ class SetupWindow:
 
     def _cancel(self):
         if self.first_run and not messagebox.askyesno(
-                "Close setup?", "No assistant is chosen yet, so \"Assistant\" requests won't work. "
+                "Close setup?", "Nothing is chosen yet, so \"Assistant\" requests won't work. "
                 "Normal dictation still works. Close anyway?", parent=self.root):
             return
         self.root.destroy()

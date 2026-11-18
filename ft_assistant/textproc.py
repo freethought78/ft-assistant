@@ -49,6 +49,16 @@ def _strip_leading_punct(s):
     return re.sub(r"^[\s,.:;!?\-]+", "", s).strip()
 
 
+def route(text, dictation_only=False):
+    """What to do with cleaned dictation text. In "Dictation only" there's no assistant, so the
+    keyword means nothing: "Assistant, ..." is typed like anything else. "Assistant setup" still
+    opens the setup screen (otherwise there'd be no spoken way back to it)."""
+    cmd = parse_command(text)
+    if dictation_only and cmd.kind == "assistant":
+        return Command("dictate", (text or "").strip())
+    return cmd
+
+
 def parse_command(text):
     """Classify cleaned dictation text. Only the very first word can be the keyword."""
     text = (text or "").strip()

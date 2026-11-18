@@ -1,6 +1,6 @@
 import unittest
 
-from ft_assistant.textproc import Command, build_hotwords, clean_text, parse_command
+from ft_assistant.textproc import Command, build_hotwords, clean_text, parse_command, route
 
 
 class CleanText(unittest.TestCase):
@@ -52,6 +52,21 @@ class ParseCommand(unittest.TestCase):
         # More words after "setup" make it a normal request.
         self.assertEqual(parse_command("Assistant setup a new repo"),
                          Command("assistant", "setup a new repo"))
+
+
+class DictationOnly(unittest.TestCase):
+    def test_keyword_is_plain_text_in_dictation_only(self):
+        self.assertEqual(route("Assistant, open the browser.", dictation_only=True),
+                         Command("dictate", "Assistant, open the browser."))
+        self.assertEqual(route("Assistant", dictation_only=True), Command("dictate", "Assistant"))
+
+    def test_setup_still_works_in_dictation_only(self):
+        self.assertEqual(route("Assistant setup.", dictation_only=True), Command("setup"))
+
+    def test_assistant_mode_unchanged(self):
+        self.assertEqual(route("Assistant, open the browser.", dictation_only=False),
+                         Command("assistant", "open the browser."))
+        self.assertEqual(route("Hello there.", dictation_only=True), Command("dictate", "Hello there."))
 
 
 class Hotwords(unittest.TestCase):

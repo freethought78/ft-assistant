@@ -14,6 +14,8 @@ from pathlib import Path
 IS_WINDOWS = sys.platform == "win32"
 
 HARNESSES = ("claude", "opencode")
+DICTATION_ONLY = "none"            # the "Dictation only" choice: no assistant, just typing
+CHOICES = (DICTATION_ONLY,) + HARNESSES
 
 # Trigger shapes: {"type": "key", "keysym": "Caps_Lock"} or {"type": "button", "button": 12}
 DEFAULT_TRIGGER = {"type": "key", "keysym": "Caps_Lock"}
@@ -52,11 +54,20 @@ def sessions_dir():
 
 @dataclass
 class Settings:
-    harness: str = ""                       # "claude" | "opencode" | "" (not chosen yet)
+    harness: str = ""        # "none" (Dictation only) | "claude" | "opencode" | "" (not chosen yet)
     trigger: dict = field(default_factory=lambda: dict(DEFAULT_TRIGGER))
 
     @property
     def harness_chosen(self):
+        """A choice was made in setup (an assistant, or Dictation only)."""
+        return self.harness in CHOICES
+
+    @property
+    def dictation_only(self):
+        return self.harness == DICTATION_ONLY
+
+    @property
+    def uses_assistant(self):
         return self.harness in HARNESSES
 
 
@@ -71,7 +82,7 @@ def load():
         data = json.loads(settings_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return s
-    if data.get("harness") in HARNESSES:
+    if data.get("harness") in CHOICES:
         s.harness = data["harness"]
     trig = data.get("trigger")
     if isinstance(trig, dict) and (

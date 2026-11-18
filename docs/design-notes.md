@@ -112,18 +112,18 @@ Check for updates and Uninstall are placeholders until their phases.
 
 Requested by the user to be built before the first release. Documented only; no code yet.
 
-### "Dictation only" choice
+### "Dictation only" choice (built 2026-11-18, for 0.2.0)
 
-- A new choice **at the top of the assistant list** on the setup screen, above OpenCode and
-  Claude Code: **"Dictation only"**: no assistant, just the typing tool.
-- With it chosen, **Save never warns** that an assistant isn't installed, and nothing about
-  assistants is checked or asked. It's a complete, first-class setup, not a fallback.
-- Likely the right default for first-time setup when neither assistant is installed (to confirm).
-- To settle when building:
-  - Is the keyword switched off, so "Assistant, ..." is typed as ordinary text? (Probably yes.)
-  - "Assistant setup" (in whatever form the custom word takes, below) should still open the setup
-    screen, or the user has no voice way back to it. The menu entry also opens it.
-  - The privacy note on the setup screen can say that nothing goes online in this mode.
+- **The first choice in the assistant list** on the setup screen, above OpenCode and Claude Code:
+  **"Dictation only: just typing, no assistant"**. Stored as `"harness": "none"`.
+- **Save never warns** that an assistant isn't installed; nothing about assistants is checked.
+- **The keyword is off:** "Assistant, ..." is typed as ordinary text (`textproc.route`).
+- **"Assistant setup" still opens the setup screen**, so there's always a spoken way back.
+- **The privacy note** reads "Everything stays on this computer: nothing you say is sent anywhere."
+- **First run:** preselected when neither Claude Code nor OpenCode is installed; otherwise nothing
+  is preselected.
+- Tested by the user with the dev build: "Assistant, hello there" was typed, "Assistant setup"
+  opened the screen with Dictation only selected, Save closed without questions.
 
 ### Choosing the keyword
 

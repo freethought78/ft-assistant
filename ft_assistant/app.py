@@ -122,7 +122,7 @@ class App:
         t = time.time()
         raw = self.engine.transcribe(audio)
         text = textproc.clean_text(raw)
-        cmd = textproc.parse_command(text)
+        cmd = textproc.route(text, self.settings.dictation_only)
         log.debug("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
         if self.caps_trigger:
             plat.caps_lock_off()
@@ -149,7 +149,7 @@ class App:
                 plat.press_enter()
             return
         self.settings = config.load()          # pick up changes made in the setup screen
-        if not self.settings.harness_chosen:
+        if not self.settings.uses_assistant:
             plat.notify("No assistant chosen yet. Hold the Assistant key and say "
                         "\"Assistant setup\".")
             return
@@ -255,7 +255,7 @@ def main():
     trig = settings.trigger
     log.info("ready: version %s, Assistant key %s, harness %s", __version__,
              trig.get("keysym") or f"mouse button {trig.get('button')}",
-             settings.harness or "(not chosen)")
+             "dictation only" if settings.dictation_only else (settings.harness or "(not chosen)"))
     print("FT Assistant ready.")
     if not settings.harness_chosen:
         app.open_setup()            # first run: choose an assistant before anything else

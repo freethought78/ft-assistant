@@ -118,6 +118,15 @@ class Settings(unittest.TestCase):
         config.save(s)
         self.assertEqual(config.load(), s)
 
+    def test_dictation_only(self):
+        config.save(config.Settings(harness="none"))
+        s = config.load()
+        self.assertTrue(s.harness_chosen)
+        self.assertTrue(s.dictation_only)
+        self.assertFalse(s.uses_assistant)
+        self.assertTrue(config.Settings(harness="claude").uses_assistant)
+        self.assertFalse(config.Settings(harness="").harness_chosen)
+
     def test_bad_values_fall_back(self):
         Path(self.tmp.name, "settings.json").write_text(json.dumps(
             {"harness": "gemini", "trigger": {"type": "button", "button": 1}}))
