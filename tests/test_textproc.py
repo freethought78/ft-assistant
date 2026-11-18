@@ -1,6 +1,6 @@
 import unittest
 
-from ft_assistant.textproc import Command, clean_text, parse_command
+from ft_assistant.textproc import Command, build_hotwords, clean_text, parse_command
 
 
 class CleanText(unittest.TestCase):
@@ -52,6 +52,13 @@ class ParseCommand(unittest.TestCase):
         # More words after "setup" make it a normal request.
         self.assertEqual(parse_command("Assistant setup a new repo"),
                          Command("assistant", "setup a new repo"))
+
+
+class Hotwords(unittest.TestCase):
+    def test_keyword_hints_always_first(self):
+        self.assertEqual(build_hotwords([]), "Assistant, Assistant setup")
+        self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
+                         "Assistant, Assistant setup, Discord, Claude")
 
 
 if __name__ == "__main__":

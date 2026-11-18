@@ -7,7 +7,6 @@
 
 What the user says is never written to the log; only sizes and timings are."""
 
-import fcntl
 import logging
 import os
 import queue
@@ -19,7 +18,7 @@ import time
 import numpy as np
 
 from . import __version__, config, harness, open_setup, textproc, updater
-from . import platform_linux as plat
+from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
 from .setup_ui import CHANGED as SETUP_CHANGED
@@ -41,16 +40,10 @@ def setup_logging():
 
 
 def single_instance():
-    lock = open(config.config_dir() / ".lock", "a+")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    lock = plat.lock_single_instance(config.config_dir() / ".lock")
+    if lock is None:
         print("FT Assistant is already running.")
         raise SystemExit(0)
-    lock.seek(0)
-    lock.truncate()
-    lock.write(str(os.getpid()))      # lets the installer stop us for updates and uninstall
-    lock.flush()
     return lock
 
 
@@ -65,6 +58,7 @@ class App:
         self.our_windows = set()        # terminal windows this tool opened for an agent
         self.agent_window = {}          # harness key -> its most recent window we opened
         self.setup_proc = None          # the setup screen, while it's open
+        self.listener = None            # the current Assistant key listener
         self.caps_trigger = (settings.trigger.get("type") == "key"
                              and settings.trigger.get("keysym") == "Caps_Lock")
 
@@ -190,12 +184,11 @@ class App:
         self.settings = config.load()
         self.caps_trigger = (self.settings.trigger.get("type") == "key"
                              and self.settings.trigger.get("keysym") == "Caps_Lock")
-        if code == SETUP_CHANGED and self.settings.trigger != old_trigger:
-            log.info("Assistant key changed; restarting to use it")
-            self.engine.stop()
-            self.rec.close()
-            os.execv(sys.executable, [sys.executable, "-m", "ft_assistant"])
         self.setup_proc = None
+        if code == SETUP_CHANGED and self.settings.trigger != old_trigger and self.listener:
+            # Switch keys in place: stop watching the old key; main() starts the new one.
+            log.info("Assistant key changed; switching to it")
+            self.listener.stop()
 
     # ---- update check (background thread)
 
@@ -258,4 +251,8 @@ def main():
     print("FT Assistant ready.")
     if not settings.harness_chosen:
         app.open_setup()            # first run: choose an assistant before anything else
-    plat.TriggerListener(trig, app.on_press, app.on_release).run()   # blocks forever
+    while True:                     # a new listener whenever the Assistant key is changed
+        app.listener = plat.TriggerListener(trig, app.on_press, app.on_release)
+        app.listener.run()          # blocks until the key changes
+        trig = app.settings.trigger
+        log.info("ready: Assistant key %s", trig.get("keysym") or f"mouse button {trig.get('button')}")

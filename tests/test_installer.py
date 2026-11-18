@@ -74,59 +74,57 @@ class Installer(unittest.TestCase):
         self.assertIn("needs a repair", text)            # shown if a system upgrade broke Python
         self.assertIn('PYTHONNOUSERSITE="1"', text)
 
-    def make_cached_model(self, root, name="large-v3-turbo"):
+    def make_cached_model(self, root, name="large-v3-turbo", shared_store=False):
+        """A Hugging Face style cache entry: snapshot files are links into blobs/ (or, in newer
+        caches, into a cache-wide shared store)."""
         repo = Path(root) / f"models--mobiuslabsgmbh--faster-whisper-{name}"
-        (repo / "blobs").mkdir(parents=True)
-        (repo / "blobs" / "abc").write_bytes(b"weights")
         snap = repo / "snapshots" / "123"
         snap.mkdir(parents=True)
-        os.symlink("../../blobs/abc", snap / "model.bin")
-        return repo
+        (repo / "blobs").mkdir()
+        for f in ("model.bin", "config.json", "tokenizer.json"):
+            if shared_store:
+                (Path(root) / "blobs" / "b5").mkdir(parents=True, exist_ok=True)
+                (Path(root) / "blobs" / "b5" / f).write_bytes(b"data " + f.encode())
+                os.symlink(f"../../blobs/b5/{f}", repo / "blobs" / f)
+            else:
+                (repo / "blobs" / f).write_bytes(b"data " + f.encode())
+            os.symlink(f"../../blobs/{f}", snap / f)
+        return snap
 
     def test_find_model(self):
         cache = Path(self.tmp.name, "hfcache")
         self.assertIsNone(inst.find_model("large-v3-turbo", [cache]))
-        repo = self.make_cached_model(cache)
-        self.assertEqual(inst.find_model("large-v3-turbo", [cache]), repo)
+        snap = self.make_cached_model(cache)
+        self.assertEqual(inst.find_model("large-v3-turbo", [cache]), snap)
         self.assertIsNone(inst.find_model("small.en", [cache]))
 
-    def test_model_reused_with_hard_links(self):
-        cache = Path(self.tmp.name, "hfcache")
-        repo = self.make_cached_model(cache)
-        with mock.patch.dict(os.environ, {"FT_ASSISTANT_MODEL_SOURCE": str(cache)}):
-            self.assertEqual(inst.install_model(self.dir, gpu=True), "large-v3-turbo")
-        blob = self.dir / "models" / repo.name / "blobs" / "abc"
-        link = self.dir / "models" / repo.name / "snapshots" / "123" / "model.bin"
-        self.assertTrue(link.is_symlink())
-        self.assertEqual(link.read_bytes(), b"weights")
-        self.assertTrue(os.path.samefile(blob, repo / "blobs" / "abc"))   # same file, no extra space
-        # Deleting the original keeps our copy working.
-        (repo / "blobs" / "abc").unlink()
-        self.assertEqual(link.read_bytes(), b"weights")
-        # Running again finds the model already in place.
-        self.assertEqual(inst.install_model(self.dir, gpu=True), "large-v3-turbo")
-
-    def test_model_in_shared_blob_store(self):
-        # Newer Hugging Face caches: the repo's blob is a symlink into a cache-wide store.
-        cache = Path(self.tmp.name, "hfcache")
-        repo = cache / "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"
-        (cache / "blobs" / "b5").mkdir(parents=True)
-        (cache / "blobs" / "b5" / "real").write_bytes(b"big weights")
-        (repo / "blobs").mkdir(parents=True)
-        os.symlink("../../blobs/b5/real", repo / "blobs" / "e76")
-        (repo / "snapshots" / "1").mkdir(parents=True)
-        os.symlink("../../blobs/e76", repo / "snapshots" / "1" / "model.bin")
-        inst.link_tree(repo, self.dir / "models" / repo.name)
-        ours = self.dir / "models" / repo.name / "snapshots" / "1" / "model.bin"
-        self.assertEqual(ours.read_bytes(), b"big weights")
-        self.assertTrue(os.path.samefile(ours, cache / "blobs" / "b5" / "real"))
-        self.assertIsNotNone(inst.find_model("large-v3-turbo", [self.dir / "models"]))
+    def test_model_reused_as_plain_hard_linked_files(self):
+        for shared in (False, True):
+            with self.subTest(shared_store=shared):
+                cache = Path(self.tmp.name, f"hfcache{shared}")
+                snap = self.make_cached_model(cache, shared_store=shared)
+                d = self.dir / f"i{shared}"
+                with mock.patch.dict(os.environ, {"FT_ASSISTANT_MODEL_SOURCE": str(cache)}):
+                    target = inst.install_model(d, gpu=True)
+                self.assertEqual(target, d / "models" / "large-v3-turbo")
+                ours = target / "model.bin"
+                self.assertFalse(ours.is_symlink())                       # plain file
+                self.assertTrue(os.path.samefile(ours, (snap / "model.bin").resolve()))
+                (snap / "model.bin").resolve().unlink()                   # original deleted:
+                self.assertEqual(ours.read_bytes(), b"data model.bin")    # ours still works
+                self.assertEqual(inst.install_model(d, gpu=True), target)  # already there
 
     def test_broken_model_not_found(self):
         cache = Path(self.tmp.name, "hfcache")
         snap = cache / "models--x--faster-whisper-small.en" / "snapshots" / "1"
         snap.mkdir(parents=True)
-        os.symlink("../../blobs/missing", snap / "model.bin")
+        for f in ("model.bin", "config.json", "tokenizer.json"):
+            os.symlink("../../blobs/missing", snap / f)
+        self.assertIsNone(inst.find_model("small.en", [cache]))
+        # Empty placeholder files (what Wine leaves for links) don't count either.
+        for f in ("model.bin", "config.json", "tokenizer.json"):
+            (snap / f).unlink()
+            (snap / f).write_bytes(b"")
         self.assertIsNone(inst.find_model("small.en", [cache]))
 
     def test_packages_failure_exit_code(self):

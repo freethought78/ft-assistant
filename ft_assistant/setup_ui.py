@@ -4,24 +4,33 @@ Run as its own process (python -m ft_assistant.setup_ui) so the main app keeps r
 Exit code 10 means settings were saved and changed; 0 means nothing changed."""
 
 import queue
+import shutil
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 from . import __version__, config, harness, keys, updater
-from . import platform_linux as plat
+from . import plat
 
 CHANGED = 10
 CAPTURE_SECONDS = 15
 
 # Official install commands, run in a visible terminal only after the user agrees.
+IS_WINDOWS = sys.platform == "win32"
 INSTALL_COMMANDS = {
     "claude": "curl -fsSL https://claude.ai/install.sh | bash",
     "opencode": "curl -fsSL https://opencode.ai/install | bash",
 }
+if IS_WINDOWS:                       # PowerShell commands, run in a new console window
+    INSTALL_COMMANDS = {
+        "claude": "irm https://claude.ai/install.ps1 | iex",
+        "opencode": "npm install -g opencode-ai",
+    }
 INSTALL_SIZES = {"claude": "about 350 MB", "opencode": "about 400 MB"}
 
 PRIVACY_NOTE = ("Normal dictation never leaves this computer. Requests that start with "
@@ -246,11 +255,17 @@ class SetupWindow:
                 f"This opens a terminal window that downloads and installs {h.name} from its "
                 f"official website ({INSTALL_SIZES[key]}):\n\n{cmd}\n\nContinue?", parent=self.root):
             return
-        if key == "claude":
-            after = "echo; echo 'Next: run  claude  once to sign in with your Claude account.'"
-        else:
-            after = "echo; echo 'Done.'"
-        script = f"{cmd}; {after}; echo; read -p 'Press Enter to close this window. '"
+        signin = ("Next: run  claude  once to sign in with your Claude account." if key == "claude"
+                  else "Done.")
+        if IS_WINDOWS:
+            if key == "opencode" and not shutil.which("npm"):
+                webbrowser.open("https://opencode.ai/download")
+                return
+            ps = f"{cmd}; Write-Host ''; Write-Host '{signin}'"
+            subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit",
+                              "-Command", ps], env=harness.clean_env(), creationflags=0x10)
+            return
+        script = f"{cmd}; echo; echo '{signin}'; echo; read -p 'Press Enter to close this window. '"
         argv = harness.terminal_command(["bash", "-lc", script], str(config.sessions_dir().parent))
         subprocess.Popen(argv, env=harness.clean_env(), start_new_session=True,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -261,17 +276,23 @@ class SetupWindow:
     def _start_capture(self):
         self.capturing = True
         self.change_btn.configure(state="disabled")
-        self.capture_msg.configure(text=f"Press the key or mouse button you want to use "
-                                        f"(waiting {CAPTURE_SECONDS} seconds)...")
+        self.capture_deadline = time.time() + CAPTURE_SECONDS
+        self._show_countdown()
         self._refresh()
         threading.Thread(target=lambda: self.capture_q.put(plat.capture_next(CAPTURE_SECONDS)),
                          daemon=True).start()
         self.root.after(100, self._poll_capture)
 
+    def _show_countdown(self):
+        left = max(0, int(round(self.capture_deadline - time.time())))
+        self.capture_msg.configure(text=f"Press the key or mouse button you want to use now... "
+                                        f"({left} seconds left)")
+
     def _poll_capture(self):
         try:
             trig = self.capture_q.get_nowait()
         except queue.Empty:
+            self._show_countdown()
             self.root.after(100, self._poll_capture)
             return
         self.capturing = False
@@ -326,8 +347,7 @@ class SetupWindow:
         if not d:
             # Development build (not installed): just show the release.
             if self.release and self.release.url:
-                subprocess.Popen(["xdg-open", self.release.url], stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                webbrowser.open(self.release.url)
             self.update_msg.configure(text="This copy isn't installed, so it can't update itself. "
                                            "The release page is open in your browser.",
                                       style="Note.TLabel")
@@ -357,6 +377,12 @@ class SetupWindow:
 
     def _run_installer(self, d, args):
         """Run the installed installer in a visible terminal window."""
+        if IS_WINDOWS:
+            venv = d / "python" / "Scripts" / "python.exe"
+            py = venv if venv.exists() else d / "python" / "python.exe"
+            subprocess.Popen([str(py), str(d / "install.py")] + args + ["--pause"],
+                             env=harness.clean_env(), creationflags=0x10)   # new console
+            return
         py = d / "python" / "bin" / "python3"
         script = (" ".join(f"'{x}'" for x in [str(py), str(d / "install.py")] + args)
                   + "; echo; read -p 'Press Enter to close this window. '")

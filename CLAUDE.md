@@ -35,6 +35,12 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
 - **`main` = the live tool.** It matches what's deployed. Only small fixes the user asks for go here.
 - **`next` = the redesign** (started 2026-11-17): discussion, then implementation. It never deploys.
   Windows testing uses only the existing Bottles bottle **`DannyRando-Test`** (Flatpak Bottles).
+  **One Wine session at a time:** every `bottles-cli run` starts its own sandbox with its own
+  wineserver, so two runs at once (e.g. Notepad in one, the app in another) fight over the same
+  bottle, crash it, and keep key presses from reaching the app. Start everything a test needs
+  from a single `.cmd` in one `bottles-cli run` (use `start` inside it), wait for it to finish,
+  and check no DannyRando-Test processes are left (match `WINEPREFIX` in `/proc/<pid>/environ`)
+  before starting the next. Never kill a run halfway unless it's stuck.
   Never create new bottles for this project, and never run anything in the user's other bottles
   (they're games and apps).
   The agreed design lives in `docs/design-notes.md`. The new code is the `ft_assistant/` package.

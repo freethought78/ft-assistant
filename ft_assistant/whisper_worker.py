@@ -24,6 +24,9 @@ os.dup2(2, 1)
 import numpy as np  # noqa: E402
 from faster_whisper import WhisperModel  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ft_assistant.textproc import build_hotwords  # noqa: E402
+
 MODEL = os.environ.get("FT_ASSISTANT_MODEL", "large-v3-turbo")
 DEVICE = os.environ.get("FT_ASSISTANT_DEVICE", "cuda")
 MODELS_DIR = os.environ.get("FT_ASSISTANT_MODELS_DIR") or None
@@ -31,12 +34,14 @@ VOCAB_FILE = os.environ.get("FT_ASSISTANT_VOCAB", "")
 
 
 def load_vocab():
+    """Hint words for Whisper: the keyword hints plus the user's vocabulary file (re-read for
+    every dictation, so edits apply at once)."""
     try:
         with open(VOCAB_FILE, encoding="utf-8") as f:
             words = [w.strip() for w in f if w.strip() and not w.startswith("#")]
-        return ", ".join(words) or None
     except OSError:
-        return None
+        words = []
+    return build_hotwords(words)
 
 
 model = WhisperModel(MODEL, device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8",

@@ -262,6 +262,46 @@ tool's model was untouched.
   Windows; they can capture it again in setup on Linux.)
 - **Still unverified:** everything on Windows (needs a Windows machine).
 
+## Windows (phase 5, 2026-11-18)
+
+**Built:** `ft_assistant/platform_windows.py` (standard library only): the Assistant key through
+low-level keyboard/mouse hooks that **swallow** the key (it never reaches other programs; Caps
+Lock never toggles), typing with `SendInput` (Unicode, Enter for new lines), focused-window and
+terminal detection (Windows Terminal, console), toasts through Windows PowerShell, key capture,
+single-instance lock. `ft_assistant/plat.py` picks the Linux or Windows layer. Agents open in
+Windows Terminal (`wt`), else a new console. The installer registers FT Assistant under
+Settings -> Apps and finishes deleting itself after uninstall exits.
+
+**Decided by the user (2026-11-18):**
+- **No recording cap.** Recordings last as long as the key is held; a stuck recording is a
+  key-detection bug to fix, not something to cap.
+- **Progress everywhere:** numbered setup steps ("Step 3 of 6"), progress bars for every download
+  (the model is downloaded directly so its bar shows), a countdown while capturing a key; the user
+  is never left looking at a blank window.
+
+**Found and fixed in the Bottles bottle:**
+- cuBLAS 12.9.3.13 has no Windows build; Windows uses 12.9.2.10.
+- Wine breaks the model downloader's symlinks, so models are always stored as **plain files** in
+  `models/<name>` (downloaded with `local_dir`, or hard-linked from an existing copy).
+- The small model sometimes dropped a leading "Assistant"; the large one too (1 in 14). Whisper
+  now always gets **"Assistant, Assistant setup"** as hint words before the user's vocabulary:
+  14/14 on both.
+- Wine sends its own Num Lock presses around every key (to sync lock states), so key capture saw
+  "Num_Lock". Capture now skips those (first non-lock key wins; else the lock key pressed an odd
+  number of times). Choosing Num Lock shows a warning.
+- A "key still held?" check with `GetAsyncKeyState` was wrong: a swallowed key never updates that
+  state. Removed; releases come only from the key-up messages (reliable in every clean test).
+- Changing the Assistant key no longer restarts the app: the listener is stopped and a new one
+  started in place (Linux and Windows).
+- **Testing lesson:** each `bottles-cli run` is its own Wine session; several at once crashed the
+  bottle and kept keys from reaching the app (rule added to CLAUDE.md).
+
+**Verified in the bottle (one Wine session, user at the keyboard):** setup file (steps, progress
+bars), first-run setup, key capture (Scroll Lock), in-place key switch, two dictations typed into
+Notepad (~1.5 s on the CPU with small.en), "Assistant setup" reopening the screen.
+**Not verifiable in Wine:** the NVIDIA/CUDA path, Windows toasts, Windows Terminal, the Startup
+folder entry and Settings -> Apps; these need one pass on a real Windows PC before release.
+
 ## Why `.cmd` (format comparison, 2026-11-17)
 
 No file type double-click-runs on both systems. On Linux a downloaded file is never executable

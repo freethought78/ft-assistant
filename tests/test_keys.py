@@ -33,7 +33,7 @@ class Keys(unittest.TestCase):
 
     def test_avoided_keys_warn(self):
         for sym in ("a", "Z", "5", "space", "Return", "Tab", "BackSpace", "Left", "KP_5",
-                    "Shift_L", "Control_R", "Alt_L", "Super_L", "Escape", "Print"):
+                    "Shift_L", "Control_R", "Alt_L", "Super_L", "Escape", "Print", "Num_Lock"):
             self.assertIsNotNone(keys.warning(key(sym)), sym)
 
 

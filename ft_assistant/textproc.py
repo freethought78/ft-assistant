@@ -60,3 +60,19 @@ def parse_command(text):
     if re.sub(r"[^a-z]+", " ", rest.lower()).strip() in ("setup", "set up"):
         return Command("setup")
     return Command("assistant", rest)
+
+
+# Always given to Whisper as hint words: without them it sometimes drops a leading "Assistant"
+# (tested 2026-11-18: 13/14 -> 14/14 on both large-v3-turbo and small.en). A list works better
+# than the single word.
+KEYWORD_HINTS = ("Assistant", "Assistant setup")
+
+
+def build_hotwords(vocabulary_words):
+    """Whisper hotwords: the keyword hints first, then the user's vocabulary (no duplicates)."""
+    seen, out = set(), []
+    for w in list(KEYWORD_HINTS) + [v.strip() for v in vocabulary_words]:
+        if w and w.lower() not in seen:
+            seen.add(w.lower())
+            out.append(w)
+    return ", ".join(out)

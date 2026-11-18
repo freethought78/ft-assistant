@@ -32,8 +32,9 @@ class Engine:
                 return
             t = time.time()
             logf = open(self.log_file, "ab")
+            extra = {"creationflags": 0x08000000} if sys.platform == "win32" else {}  # no console
             self.proc = subprocess.Popen([sys.executable, WORKER], stdin=subprocess.PIPE,
-                                         stdout=subprocess.PIPE, stderr=logf)
+                                         stdout=subprocess.PIPE, stderr=logf, **extra)
             logf.close()
             line = self.proc.stdout.readline()
             if line.strip() != b"READY":

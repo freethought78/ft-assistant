@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -99,8 +100,17 @@ def find_exe(h):
     return shutil.which(h.exe)
 
 
-def terminal_command(argv, folder, which=shutil.which):
-    """Wrap `argv` so it runs in a new window of the system's default terminal (Linux)."""
+def terminal_command(argv, folder, which=shutil.which, windows=sys.platform == "win32"):
+    """Wrap `argv` so it runs in a new window of the system's default terminal.
+
+    Windows: Windows Terminal (wt) if installed, else the program itself in a new console
+    window (see new_window_flags)."""
+    if windows:
+        exe = which(argv[0]) or argv[0]       # full path (claude.exe / opencode.cmd)
+        if which("wt"):
+            # wt treats ";" as "next command"; "\;" is a literal semicolon.
+            return ["wt", "-d", str(folder), exe] + [a.replace(";", "\\;") for a in argv[1:]]
+        return [exe] + argv[1:]
     if which("gnome-terminal"):
         return ["gnome-terminal", f"--working-directory={folder}", "--"] + argv
     for term in ("x-terminal-emulator", "xfce4-terminal", "konsole", "mate-terminal",
@@ -109,6 +119,15 @@ def terminal_command(argv, folder, which=shutil.which):
             # "-e" with separate args is accepted by these (konsole/xterm/x-terminal-emulator…)
             return [term, "-e"] + argv
     raise RuntimeError("no terminal program found")
+
+
+def new_window_kwargs(cmd):
+    """subprocess.Popen options so the command gets its own visible window and outlives us."""
+    if sys.platform != "win32":
+        return {"start_new_session": True}
+    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW = 0x10, 0x08000000
+    # wt opens its own window; anything else needs a new console window.
+    return {"creationflags": CREATE_NO_WINDOW if cmd[0] == "wt" else CREATE_NEW_CONSOLE}
 
 
 def open_session(harness_key, prompt, launcher=subprocess.Popen):
@@ -122,5 +141,5 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
     resume = last_conversation(harness_key, folder)
     cmd = terminal_command(h.argv(folder, prompt, resume), folder)
     launcher(cmd, cwd=str(folder), env=clean_env(), stdin=subprocess.DEVNULL,
-             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **new_window_kwargs(cmd))
     return h

@@ -31,6 +31,7 @@ _TYPING = {"space", "Return", "KP_Enter", "Tab", "BackSpace", "Delete",
 _SHORTCUT = {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
              "ISO_Level3_Shift", "Super_L", "Super_R", "Meta_L", "Meta_R", "Hyper_L", "Hyper_R"}
 _OTHER_APPS = {"Escape", "Print"}
+_NUMPAD_LOCK = {"Num_Lock"}
 
 GOOD_CHOICES = ("Caps Lock, Scroll Lock, Pause, Insert, the Menu key, F13-F24 if your keyboard "
                 "has them, or a spare side button on your mouse. Pick one you can hold "
@@ -71,6 +72,9 @@ def warning(trigger):
         return f"{name} is a key you need for typing. While it's the Assistant key it won't type."
     if sym in _SHORTCUT:
         return f"{name} is used in keyboard shortcuts. Shortcuts with it may stop working."
+    if sym in _NUMPAD_LOCK:
+        return (f"{name} switches the number pad between numbers and arrows, and some systems "
+                "send it on their own. A different key is more reliable.")
     if sym in _OTHER_APPS:
         return f"{name} is used by other programs. They won't receive it any more."
     return None

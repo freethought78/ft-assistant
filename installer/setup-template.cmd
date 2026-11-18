@@ -6,7 +6,7 @@ setlocal
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='%~f0'; $t=[IO.File]::ReadAllText($f); $m='#__FT_ASSISTANT_'+'PS__'; $p=$t.Substring($t.IndexOf($m)+$m.Length); $e='#__FT_ASSISTANT_'+'INSTALLER__'; $p=$p.Substring(0,$p.IndexOf($e)); $env:FT_SETUP_FILE=$f; Invoke-Expression $p"
 set "RC=%ERRORLEVEL%"
 echo.
-pause
+if not defined FT_SETUP_YES pause
 exit /b %RC%
 ::CMDLITERAL
 # ---------------------------------------------------------------- Linux part
@@ -20,7 +20,7 @@ fail() { say ""; say "$*"; say ""; exit 1; }
 say ""
 say "FT Assistant setup"
 say "=================="
-say "Please wait a moment while requirements are checked..."
+say "Step 1 of 6: Checking what this computer already has (a few seconds)..."
 say ""
 
 [ "$(uname -s)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ] \
@@ -100,6 +100,7 @@ fi
 
 GPU=no
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q '^GPU'; then GPU=yes; fi
+case "${FT_SETUP_GPU:-}" in yes|no) GPU="$FT_SETUP_GPU";; esac   # testing hook
 MODEL="small.en"; [ "$GPU" = "yes" ] && MODEL="large-v3-turbo"
 PY_SOURCE=standalone; py_ok && py_venv && PY_SOURCE=system
 GPU_LIBS=pip
@@ -113,6 +114,7 @@ model_on_computer() {    # same places install.py looks (Hugging Face cache, ear
            "$HOME/.cache/huggingface/hub" "$HOME/.local/share/voice-dictation/models" "${1:-}/models"; do
     [ -n "$d" ] && compgen -G "$d/models--*--faster-whisper-$MODEL/snapshots/*/model.bin" >/dev/null && return 0
   done
+  [ -s "${1:-}/models/$MODEL/model.bin" ] && return 0
   return 1
 }
 
@@ -162,7 +164,7 @@ fi
 say ""
 
 download_python() {
-  say "Downloading the Python runtime..."
+  say "  Downloading the Python runtime (about 70 MB):"
   rm -rf "$DIR/python"
   if [ -n "${FT_SETUP_PYTHON_TARBALL:-}" ]; then
     tar -xzf "$FT_SETUP_PYTHON_TARBALL" -C "$DIR" || fail "Couldn't unpack the Python runtime."
@@ -180,8 +182,9 @@ run_installer() {
 }
 
 sed -n '/^#__FT_ASSISTANT_INSTALLER__$/,$p' "$SELF" | tail -n +2 > "$DIR/install.py"
+say "Step 2 of 6: Python"
 if [ "$PY_SOURCE" = "system" ]; then
-  say "Using this computer's Python ($(python3 -c 'import sys; print(sys.version.split()[0])'))..."
+  say "  Using this computer's Python ($(python3 -c 'import sys; print(sys.version.split()[0])')): making a private package folder..."
   rm -rf "$DIR/python"
   python3 -m venv "$DIR/python" || PY_SOURCE=standalone
 fi
@@ -207,13 +210,14 @@ function Fail($s) { Write-Host ''; Write-Host $s; exit 1 }
 Say ''
 Say 'FT Assistant setup'
 Say '=================='
-Say 'Please wait a moment while requirements are checked...'
+Say 'Step 1 of 6: Checking what this computer already has (a few seconds)...'
 Say ''
 if (-not [Environment]::Is64BitOperatingSystem) { Fail 'FT Assistant needs 64-bit Windows.' }
 $gpu = 'no'
 try {
   if (Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' }) { $gpu = 'yes' }
 } catch { }
+if ($env:FT_SETUP_GPU -in @('yes', 'no')) { $gpu = $env:FT_SETUP_GPU }   # testing hook (Wine has no CUDA)
 $model = if ($gpu -eq 'yes') { 'large-v3-turbo' } else { 'small.en' }
 $default = Join-Path $env:LOCALAPPDATA 'FT Assistant'
 
@@ -239,11 +243,17 @@ function Find-SystemPython {
 $sysPy = Find-SystemPython
 $pySource = if ($sysPy) { 'system' } else { 'standalone' }
 $gpuLibs = 'pip'
-if ($gpu -eq 'yes' -and (Get-Command cublas64_12.dll -ErrorAction SilentlyContinue) -and (Get-Command cudnn64_9.dll -ErrorAction SilentlyContinue)) { $gpuLibs = 'system' }
+function Test-OnPath($file) {
+  foreach ($d in ($env:PATH -split ';')) { if ($d -and (Test-Path -LiteralPath (Join-Path $d $file))) { return $true } }
+  return $false
+}
+if ($gpu -eq 'yes' -and (Test-OnPath 'cublas64_12.dll') -and (Test-OnPath 'cudnn64_9.dll')) { $gpuLibs = 'system' }
 function Test-ModelOnComputer($installDir) {
   $dirs = @($env:FT_ASSISTANT_MODEL_SOURCE, $env:HF_HUB_CACHE)
   if ($env:HF_HOME) { $dirs += (Join-Path $env:HF_HOME 'hub') }
-  $dirs += (Join-Path $env:USERPROFILE '.cache\huggingface\hub'), (Join-Path $installDir 'models')
+  $own = Join-Path $installDir "models\$model\model.bin"
+  if ((Test-Path $own) -and (Get-Item $own).Length -gt 0) { return $true }
+  $dirs += (Join-Path $env:USERPROFILE '.cache\huggingface\hub')
   foreach ($d in $dirs) {
     if ($d -and (Test-Path $d)) {
       if (Get-ChildItem -Path $d -Directory -Filter "models--*--faster-whisper-$model" -ErrorAction SilentlyContinue |
@@ -282,7 +292,7 @@ if (-not $env:FT_SETUP_YES) { Read-Host 'Press Enter to start, or close this win
 Say ''
 
 function Get-StandalonePython {
-  Say 'Downloading the Python runtime...'
+  Say '  Downloading the Python runtime (about 50 MB)...'
   $pyDir = Join-Path $dir 'python'
   if (Test-Path $pyDir) { Remove-Item -Recurse -Force $pyDir }
   $tgz = Join-Path $env:TEMP 'ft-assistant-python.tar.gz'
@@ -304,23 +314,26 @@ $text = [IO.File]::ReadAllText($env:FT_SETUP_FILE)
 $mark = '#__FT_ASSISTANT_' + 'INSTALLER__'
 $code = $text.Substring($text.IndexOf("`n" + $mark) + $mark.Length + 2)
 [IO.File]::WriteAllText((Join-Path $dir 'install.py'), $code)
+Say 'Step 2 of 6: Python'
 $env:PYTHONNOUSERSITE = '1'
+$extra = @()
+if ($env:FT_SETUP_INSTALL_ARGS) { $extra = $env:FT_SETUP_INSTALL_ARGS -split ' ' }   # testing hook
 if ($pySource -eq 'system') {
-  Say "Using this computer's Python ($sysPy)..."
+  Say "  Using this computer's Python ($sysPy): making a private package folder..."
   $pyDir = Join-Path $dir 'python'
   if (Test-Path $pyDir) { Remove-Item -Recurse -Force $pyDir }
   & $sysPy -m venv $pyDir
   if ($LASTEXITCODE -ne 0) { $pySource = 'standalone' }
 }
 if ($pySource -eq 'standalone') { Get-StandalonePython }
-& (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource
+& (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource @extra
 $rc = $LASTEXITCODE
 if ($rc -eq 3 -and $pySource -eq 'system') {
   Say ''
   Say "The speech engine isn't available for this computer's Python; using a downloaded Python instead."
   $pySource = 'standalone'
   Get-StandalonePython
-  & (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource
+  & (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource @extra
   $rc = $LASTEXITCODE
 }
 if ($rc -ne 0) { Say "Setup didn't finish (error $rc). You can run it again." }

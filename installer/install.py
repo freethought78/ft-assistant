@@ -45,11 +45,22 @@ CPU_MODEL = "small.en"
 COMMON_PACKAGES = ["faster-whisper==1.2.1", "ctranslate2==4.9.0", "numpy", "sounddevice==0.5.6"]
 LINUX_PACKAGES = ["python-xlib==0.33"]
 WINDOWS_PACKAGES = []                       # the Windows layer uses ctypes only
-GPU_PACKAGES = ["nvidia-cublas-cu12==12.9.3.13", "nvidia-cudnn-cu12==9.28.1.4"]
+# 12.9.3.13 has no Windows build; 12.9.2.10 is the newest cuBLAS built for both systems.
+GPU_PACKAGES = ["nvidia-cublas-cu12==" + ("12.9.2.10" if IS_WINDOWS else "12.9.3.13"),
+                "nvidia-cudnn-cu12==9.28.1.4"]
 
 
 def say(msg=""):
     print(msg, flush=True)
+
+
+TOTAL_STEPS = 6          # steps 1-2 happen in the setup script (requirements, Python)
+
+
+def step(n, text, total=TOTAL_STEPS):
+    """A clear step header, so the user always knows what's happening and that it's moving."""
+    say("")
+    say(f"Step {n} of {total}: {text}")
 
 
 # ---------------------------------------------------------------- locations
@@ -96,7 +107,9 @@ class PackagesFailed(RuntimeError):
 
 def run(cmd, **kw):
     say("  $ " + " ".join(str(c) for c in cmd))
-    env = dict(os.environ, PYTHONNOUSERSITE="1")    # never mix in the user's own Python packages
+    env = dict(os.environ, PYTHONNOUSERSITE="1",    # never mix in the user's own Python packages
+               HF_HUB_DISABLE_XET="1",                # plain per-file progress bars for the model
+               HF_HUB_VERBOSITY="error")              # no "unauthenticated requests" warning
     subprocess.run([str(c) for c in cmd], check=True, env=env, **kw)
 
 
@@ -108,7 +121,11 @@ def install_packages(install_dir, gpu, gpu_libs="pip"):
     pip_gpu = gpu and gpu_libs == "pip"
     if pip_gpu:
         pkgs += GPU_PACKAGES
-    say("Installing the speech engine" + (" and GPU libraries" if pip_gpu else "") + "...")
+    if pip_gpu:
+        say("  The speech engine and NVIDIA GPU libraries: about 1.5 GB to download, so this can")
+        say("  take several minutes. Progress bars below show each download.")
+    else:
+        say("  About 150 MB to download; this usually takes a minute or two. Progress bars below.")
     if gpu and not pip_gpu:
         say("  (using the NVIDIA libraries already installed on this computer)")
     try:
@@ -145,7 +162,7 @@ def fetch_app(install_dir, source=None):
             url, label = source, source
         else:
             url, label = _latest_release_zip()
-        say("Downloading FT Assistant…")
+        say("  Downloading FT Assistant...")
         if url.startswith("http"):
             req = urllib.request.Request(url, headers={"User-Agent": "FT-Assistant-installer"})
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -185,61 +202,68 @@ def model_search_dirs():
     return dirs
 
 
+MODEL_FILES = ("model.bin", "config.json", "tokenizer.json")
+
+
+def complete_model_dir(d):
+    """True if `d` holds a usable model (real files, not broken links)."""
+    return all((Path(d) / f).is_file() and (Path(d) / f).stat().st_size > 0 for f in MODEL_FILES)
+
+
 def find_model(name, search=None):
-    """The cached model folder (models--<org>--faster-whisper-<name>) if it's complete."""
+    """A complete snapshot folder of the model in a Hugging Face style cache, or None."""
     for d in search if search is not None else model_search_dirs():
-        for repo in sorted(Path(d).glob(f"models--*--faster-whisper-{name}")):
-            if any(p.exists() for p in repo.glob("snapshots/*/model.bin")):   # not a broken link
-                return repo
+        for snap in sorted(Path(d).glob(f"models--*--faster-whisper-{name}/snapshots/*")):
+            if complete_model_dir(snap):
+                return snap
     return None
 
 
-def link_tree(src, dest):
-    """Recreate `src` at `dest` with hard links (no extra disk space, and independent of the
-    original: deleting either keeps the other). Symlinks that stay inside `src` are kept as
-    symlinks; ones that point outside it (newer caches keep big files in a shared store) are
-    replaced by a hard link to the real file. If hard links aren't possible (different drive),
-    files are copied instead."""
-    src = Path(src)
-    root_real = src.resolve()
+def link_files(src, dest):
+    """Put the model's files into `dest` as hard links to the real files (no extra disk space,
+    independent of the original: deleting either keeps the other). Links inside caches are
+    followed to the real file. If hard links aren't possible (different drive), copy."""
+    dest.mkdir(parents=True, exist_ok=True)
     copied = False
-    for root, dirs, files in os.walk(src):
-        rel = Path(root).relative_to(src)
-        (dest / rel).mkdir(parents=True, exist_ok=True)
-        for n in files + [d for d in dirs if (Path(root) / d).is_symlink()]:
-            s, t = Path(root) / n, dest / rel / n
-            if t.exists() or t.is_symlink():
-                continue
-            real = s.resolve()
-            if s.is_symlink() and root_real in real.parents:
-                os.symlink(os.readlink(s), t)
-            elif real.is_file():
-                try:
-                    os.link(real, t)
-                except OSError:
-                    shutil.copy2(real, t)
-                    copied = True
+    for f in Path(src).iterdir():
+        real, t = f.resolve(), dest / f.name
+        if not real.is_file() or t.exists():
+            continue
+        try:
+            os.link(real, t)
+        except OSError:
+            shutil.copy2(real, t)
+            copied = True
     return copied
 
 
 def install_model(install_dir, gpu):
-    models = Path(install_dir) / "models"
-    models.mkdir(parents=True, exist_ok=True)
+    """The model lives in <dir>/models/<name> as plain files (no symlinks: they break under
+    Wine and on Windows without developer mode). Returns that folder."""
     name = GPU_MODEL if gpu else CPU_MODEL
-    if find_model(name, [models]):
-        say(f"The Whisper model ({name}) is already there.")
-        return name
+    target = Path(install_dir) / "models" / name
+    if complete_model_dir(target):
+        say(f"  The Whisper model ({name}) is already there.")
+        return target
     found = find_model(name)
     if found:
-        copied = link_tree(found, models / found.name)
-        say(f"Reusing the Whisper model already on this computer ({found.parent})"
+        copied = link_files(found, target)
+        say(f"  Reusing the Whisper model already on this computer ({found.parents[2]})"
             + (" (copied: different drive)." if copied else ", no download and no extra disk space."))
-        return name
-    say(f"Downloading the Whisper model ({name})...")
+        return target
+    size = "about 1.6 GB" if name == GPU_MODEL else "about 500 MB"
+    say(f"  Downloading the Whisper model ({name}, {size}). The progress bar below shows how far")
+    say("  along it is.")
+    # Downloaded directly (not through faster-whisper's helper, which hides the progress bar).
     run([python_exe(install_dir), "-c",
-         "import sys; from faster_whisper import download_model; "
-         "download_model(sys.argv[1], cache_dir=sys.argv[2])", name, models])
-    return name
+         "import sys; from faster_whisper.utils import _MODELS; "
+         "from huggingface_hub import snapshot_download; "
+         "snapshot_download(_MODELS.get(sys.argv[1], sys.argv[1]), local_dir=sys.argv[2], "
+         "allow_patterns=['config.json', 'preprocessor_config.json', 'model.bin', "
+         "'tokenizer.json', 'vocabulary.*'])", name, target])
+    if not complete_model_dir(target):
+        raise RuntimeError("the Whisper model download is incomplete; run setup again")
+    return target
 
 
 def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
@@ -341,6 +365,41 @@ def write_shortcuts(launchers, autostart=True):
     return written
 
 
+UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FTAssistant"
+
+
+def register_windows_app(install_dir, launchers, version):
+    """Windows: list FT Assistant under Settings -> Apps (per user, no admin needed)."""
+    if not IS_WINDOWS:
+        return
+    import winreg
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY) as k:
+        for name, value in (("DisplayName", APP_NAME), ("Publisher", "freethought78"),
+                            ("DisplayVersion", version), ("InstallLocation", str(install_dir)),
+                            ("UninstallString", f'"{launchers["ft-assistant-uninstall"]}"')):
+            winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
+        for name in ("NoModify", "NoRepair"):
+            winreg.SetValueEx(k, name, 0, winreg.REG_DWORD, 1)
+
+
+def unregister_windows_app():
+    if not IS_WINDOWS:
+        return
+    import winreg
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY)
+    except OSError:
+        pass
+
+
+def app_version(install_dir):
+    try:
+        text = (Path(install_dir) / "app" / "ft_assistant" / "__init__.py").read_text()
+        return text.split('__version__ = "', 1)[1].split('"', 1)[0]
+    except (OSError, IndexError):
+        return ""
+
+
 def write_vocabulary():
     p = config_dir() / "vocabulary.txt"
     if not p.exists():
@@ -402,16 +461,22 @@ def cmd_install(a):
     gpu = a.gpu == "yes"
     d.mkdir(parents=True, exist_ok=True)
     stop_running_app()
+    step(3, "Installing the speech engine")
     try:
         install_packages(d, gpu, a.gpu_libs)
     except PackagesFailed as e:
         say(f"Installing the speech engine failed: {e}")
         raise SystemExit(3)            # the setup script may retry with a downloaded Python
+    step(4, "Installing the FT Assistant program")
     label = fetch_app(d, a.source)
-    model = install_model(d, gpu)
+    say("  Done.")
+    step(5, "Getting the Whisper speech model")
+    model = str(install_model(d, gpu))       # folder with the model's files
+    step(6, "Adding menu entries and finishing")
     copy_self(d)
     launchers = write_launchers(d, gpu, model, a.gpu_libs)
     shortcuts = write_shortcuts(launchers, autostart=not a.no_autostart)
+    register_windows_app(d, launchers, app_version(d))
     write_vocabulary()
     save_manifest(d, {"installed": time.strftime("%Y-%m-%d %H:%M"), "gpu": gpu, "model": model,
                       "gpu_libs": a.gpu_libs, "python": a.python_source, "source": label,
@@ -428,7 +493,9 @@ def cmd_update(a):
     info = load_manifest(d)
     stop_running_app()
     try:
+        step(1, "Downloading the new version", total=2)
         label = fetch_app(d, a.source)
+        step(2, "Updating the speech engine (only what changed is downloaded)", total=2)
         install_packages(d, info.get("gpu", False), info.get("gpu_libs", "pip"))
     except Exception as e:
         prev = d / "app.previous"
@@ -462,15 +529,26 @@ def cmd_uninstall(a):
         if input("Type yes to uninstall: ").strip().lower() != "yes":
             say("Nothing was removed.")
             return
+    say("Removing FT Assistant...")
     stop_running_app()
     for p in info.get("shortcuts", []):
         try:
             Path(p).unlink()
         except OSError:
             pass
+    unregister_windows_app()
     if not a.keep_settings:
         shutil.rmtree(config_dir(), ignore_errors=True)
-    shutil.rmtree(d, ignore_errors=True)
+    if IS_WINDOWS:
+        # Windows can't delete the Python that's running this; remove what we can now and let
+        # a small detached command delete the rest a few seconds after we exit.
+        for child in d.iterdir():
+            if child.name != "python":
+                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
+        subprocess.Popen(f'cmd /c ping -n 4 127.0.0.1 >nul & rmdir /s /q "{d}"',
+                         creationflags=0x08000000 | 0x00000008)   # no window, detached
+    else:
+        shutil.rmtree(d, ignore_errors=True)
     say("FT Assistant was removed." + (" Your settings were kept." if a.keep_settings else ""))
     say("Claude Code and OpenCode are still installed; remove them separately if you want.")
 
@@ -494,8 +572,15 @@ def main(argv=None):
     x.add_argument("--dir", required=True)
     x.add_argument("--keep-settings", action="store_true")
     x.add_argument("--yes", action="store_true")
+    for sp in (i, u, x):
+        sp.add_argument("--pause", action="store_true",
+                        help="wait for Enter at the end (when run in its own window)")
     a = p.parse_args(argv)
-    {"install": cmd_install, "update": cmd_update, "uninstall": cmd_uninstall}[a.command](a)
+    try:
+        {"install": cmd_install, "update": cmd_update, "uninstall": cmd_uninstall}[a.command](a)
+    finally:
+        if a.pause:
+            input("\nPress Enter to close this window. ")
 
 
 if __name__ == "__main__":

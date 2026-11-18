@@ -123,7 +123,25 @@ class TriggerListener:
                     pending["timer"] = t
                     t.start()
 
-        rdpy.record_enable_context(ctx, callback)
+        self._ctx = ctx
+        rdpy.record_enable_context(ctx, callback)       # returns when stop() is called
+        rdpy.record_free_context(ctx)
+        rdpy.close()
+
+    def stop(self):
+        """Stop listening (run() returns) and release the key grab."""
+        try:
+            c = display.Display()
+            c.record_disable_context(self._ctx)
+            c.flush()
+            c.close()
+        except Exception:
+            log.exception("stopping the key listener")
+        if self._grab_dpy is not None:
+            try:
+                self._grab_dpy.close()          # closing the connection ends the grab
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------- Caps Lock
@@ -325,3 +343,27 @@ def capture_next(timeout=15.0):
     if trig and trig.get("keysym") == "Caps_Lock":
         caps_lock_off()                           # pressing it to choose it toggled it on
     return trig
+
+
+# ---------------------------------------------------------------- single instance
+
+def lock_single_instance(path):
+    """Hold an exclusive lock on `path` (and write our process id in it, so the installer can
+    stop us). Returns the open file to keep, or None if another copy already holds it."""
+    import fcntl
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    f.seek(0)
+    f.truncate()
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
+
+
+def popen_detached_kwargs():
+    """subprocess.Popen options for a program that should outlive us in its own session."""
+    return {"start_new_session": True}
