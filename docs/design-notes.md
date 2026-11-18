@@ -220,8 +220,8 @@ Hold-to-talk also has to ignore the key's auto-repeat.
    - Windows: `%LOCALAPPDATA%\FT Assistant\`
 2. **Start at login** (plan): Linux `~/.config/autostart/` entry; Windows a shortcut in the
    user's Startup folder.
-3. **Built-in update check** against the project's latest **GitHub Release** (the project will
-   live on GitHub; no repo there yet). This is the only thing that goes online outside setup;
+3. **Built-in update check** against the project's latest **GitHub Release**. The project will
+   live on the user's **`freethought78`** GitHub account (never `ftftft78`); no repo there yet. This is the only thing that goes online outside setup;
    it sends no user data.
 4. **Uninstall**, reachable from:
    - the **setup screen** ("Uninstall" button), on both systems;
