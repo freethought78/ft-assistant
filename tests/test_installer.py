@@ -98,6 +98,7 @@ class Installer(unittest.TestCase):
         self.assertIn('FT_ASSISTANT_DEVICE="cuda"', text)
         self.assertIn("LD_LIBRARY_PATH", text)
         self.assertIn("-m ft_assistant", text)
+        self.assertIn(f'cd "{self.dir}"', text)        # never runs code from the caller's folder
         self.assertTrue(os.access(launchers["ft-assistant"], os.X_OK))
         cpu = inst.write_launchers(self.dir, gpu=False, model="small.en")["ft-assistant"].read_text()
         self.assertIn('FT_ASSISTANT_DEVICE="cpu"', cpu)

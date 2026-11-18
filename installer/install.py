@@ -291,7 +291,8 @@ def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
                          ("ft-assistant-uninstall", None)):
         if IS_WINDOWS:
             path = d / (name + ".cmd")
-            lines = ["@echo off"] + [f'set "{k}={v}"' for k, v in env.items()]
+            # Start from the install folder: Python looks for modules in the current folder first.
+            lines = ["@echo off", f'cd /d "{d}"'] + [f'set "{k}={v}"' for k, v in env.items()]
             lines.append(f'set "PYTHONPATH={d / "app"}"')
             if gpu and gpu_libs == "pip":
                 nv = d / "python" / "Lib" / "site-packages" / "nvidia"
@@ -303,7 +304,10 @@ def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
             path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
         else:
             path = d / name
-            lines = ["#!/bin/bash", "# Written by the FT Assistant installer."]
+            lines = ["#!/bin/bash", "# Written by the FT Assistant installer.",
+                     # Start from the install folder: Python looks for modules in the current
+                     # folder first, so starting elsewhere could pick up the wrong copy.
+                     f'cd "{d}" || exit 1']
             lines += [f'export {k}="{v}"' for k, v in env.items()]
             lines.append(f'export PYTHONPATH="{d / "app"}"')
             # A system upgrade can replace the computer's Python under a venv; say so clearly.
