@@ -9,13 +9,14 @@ type comfortably.
 
 ## Where the live tool is
 
-Since **2026-11-18 the user runs FT Assistant v0.1.0**, installed from the GitHub release with the
-setup file (`FT-Assistant-setup.cmd`), at `~/.local/share/ft-assistant/`:
+Since **2026-11-18 the user runs FT Assistant** (installed v0.1.0 from the GitHub release with the
+setup file `FT-Assistant-setup.cmd`; **updated to v0.2.0** through the built-in updater the same
+day), at `~/.local/share/ft-assistant/`:
 
 | Path | What |
 |---|---|
 | `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/` (hard-linked from the old tool's model), launchers `ft-assistant`, `ft-assistant-setup`, `ft-assistant-uninstall`, `install.py`, `install.json`. |
-| `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (from 0.2.0: **errors only** plus a start-up line; v0.1.0 still writes activity lines, never what the user says), `update-state.json`, `.lock` (holds the process id). |
+| `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (**errors only** plus a start-up line since 0.2.0; never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 
 **The old tool is kept for rollback** at `~/.local/share/voice-dictation/` (stopped; its autostart
@@ -28,13 +29,13 @@ files are shared with the new install through hard links, so deleting either cop
 
 ### Branches and releases
 
-- **`main` = released code** (tag `v0.1.0` = what the user runs). **`next` = development**
-  (now 0.2.0.dev0: "Dictation only" and the choosable keyword, see `docs/design-notes.md`).
+- **`main` = released code** (latest tag `v0.2.0` = what the user runs). **`next` = development**
+  (now 0.3.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
   `gh release create vX.Y.Z dist/FT-Assistant-setup.cmd` (as freethought78). The app notices
-  within a day (or via "Check for updates") and asks the user. The planned 0.2.0 release is also
-  the first real test of the updater on the user's own install.
+  within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on
+  the user's own install worked (2026-11-18).
 - Only with the user's go-ahead: commits, pushes, releases, and anything that restarts the tool.
 - `deploy.sh`, `dictate.py`, `whisper_worker.py`, `run.sh` at the repo root belong to the old tool;
   keep them until the user retires it.
@@ -96,7 +97,7 @@ files are shared with the new install through hard links, so deleting either cop
   check `gh auth status` shows `freethought78` as the active account; if not, ask the user to
   sign in (`gh auth login`) or switch (`gh auth switch`) themselves.
 - The repo is **public**: https://github.com/freethought78/ft-assistant (created 2026-11-18;
-  releases: v0.1.0). Never commit personal details (health, other
+  releases: v0.1.0, v0.2.0). Never commit personal details (health, other
   projects, emails); history was scrubbed once before the first push.
 
 ## Working with the user
