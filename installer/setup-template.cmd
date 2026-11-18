@@ -134,13 +134,14 @@ if [ "$GPU" = "yes" ]; then
   fi
 fi
 if model_on_computer "${DIR:-$DEFAULT_DIR}"; then
-  say "  Whisper speech model ($MODEL)   already on this computer (reused, no extra disk space)"
+  say "$(printf '  %-40s' "Whisper speech model ($MODEL)")already on this computer (reused, no extra disk space)"
 else
-  MB=500; [ "$GPU" = "yes" ] && MB=1600
-  say "  Whisper speech model ($MODEL)   about $MB MB download"; DL_MB=$((DL_MB+MB)); DISK_MB=$((DISK_MB+MB))
+  MB=500; SIZE="500 MB"; [ "$GPU" = "yes" ] && { MB=1600; SIZE="1.6 GB"; }
+  say "$(printf '  %-40s' "Whisper speech model ($MODEL)")about $SIZE download  ($SIZE on disk)"; DL_MB=$((DL_MB+MB)); DISK_MB=$((DISK_MB+MB))
 fi
-say "  ------------------------------------------------------------"
-say "  Total                                   about $DL_MB MB download, about $DISK_MB MB on disk"
+TOTAL="  Total                                   about $DL_MB MB download, about $DISK_MB MB on disk"
+say "  $(printf '%*s' $(( ${#TOTAL} - 2 )) '' | tr ' ' '-')"
+say "$TOTAL"
 say "  (Packages already in your pip download cache aren't downloaded again.)"
 [ "$GPU" = "yes" ] || say "  No NVIDIA graphics card found, so the smaller model runs on the processor."
 say "  If you then install Claude Code or OpenCode from the setup window: about 350-400 MB more."
@@ -273,17 +274,22 @@ if ($gpu -eq 'yes') {
   else { Say '  NVIDIA GPU libraries                    about 1.3 GB download  (2.1 GB on disk)'; $dl += 1300; $disk += 2100 }
 }
 $probeDir = if ($env:FT_SETUP_DIR) { $env:FT_SETUP_DIR } else { $default }
-if (Test-ModelOnComputer $probeDir) { Say "  Whisper speech model ($model)   already on this computer (reused)" }
-else { $mb = if ($gpu -eq 'yes') { 1600 } else { 500 }; Say "  Whisper speech model ($model)   about $mb MB download"; $dl += $mb; $disk += $mb }
-Say '  ------------------------------------------------------------'
-Say "  Total                                   about $dl MB download, about $disk MB on disk"
+$modelLabel = '  {0,-40}' -f "Whisper speech model ($model)"
+if (Test-ModelOnComputer $probeDir) { Say "${modelLabel}already on this computer (reused)" }
+else {
+  if ($gpu -eq 'yes') { $mb = 1600; $size = '1.6 GB' } else { $mb = 500; $size = '500 MB' }
+  Say "${modelLabel}about $size download  ($size on disk)"; $dl += $mb; $disk += $mb
+}
+$total = "  Total                                   about $dl MB download, about $disk MB on disk"
+Say ('  ' + ('-' * ($total.Length - 2)))
+Say $total
 Say "  (Packages already in your pip download cache aren't downloaded again.)"
 if ($gpu -ne 'yes') { Say '  No NVIDIA graphics card found, so the smaller model runs on the processor.' }
 Say '  If you then install Claude Code or OpenCode from the setup window: about 350-400 MB more.'
 Say ''
 
 $dir = $env:FT_SETUP_DIR
-if (-not $dir) { $dir = Read-Host "Install to $default? Press Enter, or type another folder" }
+if (-not $dir) { $dir = Read-Host "Install to ${default}? Press Enter, or type another folder" }
 if (-not $dir) { $dir = $default }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $dir = (Resolve-Path $dir).Path
