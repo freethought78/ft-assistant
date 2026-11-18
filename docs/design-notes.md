@@ -133,6 +133,30 @@ Check for updates and Uninstall are placeholders until their phases.
 
 ### Install, updates, uninstall
 
+**Build status (phase 4, 2026-11-18):** `installer/setup-template.cmd` (Linux bash part, Windows
+cmd + PowerShell part) and `installer/install.py` (shared install / update / uninstall, standard
+library only); `python3 installer/build.py` writes `dist/FT-Assistant-setup.cmd` (~23 KB) with the
+installer embedded at the end. The Python runtime is python-build-standalone 3.12 (68 MB Linux,
+47 MB Windows), found through GitHub's API at install time. Packages are pinned to the versions
+running today (faster-whisper 1.2.1, ctranslate2 4.9.0, cuBLAS/cuDNN cu12). On a computer without
+an NVIDIA card the model is `small.en`. Linux needs `xdotool`, `notify-send` and `libportaudio2`
+from the system; setup names the exact `apt install` command if one is missing. The app writes its
+process id into its lock file so the installer can stop it before updating or uninstalling.
+Windows part: written, not yet run (Bottles phase); the app itself has no Windows layer yet.
+Live-tested on Linux (2026-11-18) in a throwaway folder (full GPU path; model copied from the
+live install): setup file -> install -> the installed copy transcribed on the GPU -> first-run
+setup, key change, dictation -> update (via `install.py update`) -> Uninstall from the setup
+screen removed the install folder, settings and menu entries. Fixes from testing: GitHub writes
+"+" as "%2B" in download names; user-site Python packages are kept out (`PYTHONNOUSERSITE`);
+re-running setup skips a model that's already there; the setup screen uses pixel font sizes,
+because the installed Python's Tk 9 draws with old X11 fonts (they also can't draw "…" or "–").
+**Clear fonts on Linux (2026-11-18):** the setup window runs on the computer's own Python when its
+Tk draws smooth (Xft) fonts (`ft_assistant/gui.py`; python-xlib and six are copied next to the
+settings for it), else on the bundled Python with the pixel-size fallback. The setup file now
+**offers to install missing system packages** with one `sudo` command (apt, dnf, pacman or zypper;
+the user types their password): needed `xdotool`, `libnotify`, `portaudio` (setup stops if they're
+still missing) and recommended `python3-tk` (setup continues without it, plainer font).
+
 1. **Install location:** suggested, and changeable before installing. Per-user, no admin rights:
    Linux `~/.local/share/ft-assistant/`, Windows `%LOCALAPPDATA%\FT Assistant\`.
 2. **Start at login:** Linux `~/.config/autostart/` entry; Windows a shortcut in the user's Startup

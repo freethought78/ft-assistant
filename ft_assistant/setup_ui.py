@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
 from . import __version__, config, harness, keys, updater
@@ -40,8 +41,35 @@ DISABLED = "#6c6f75"
 ACCENT = "#5b9cf5"
 
 
+# Font sizes in pixels (negative = pixels), so the text is the same size whether Tk draws with
+# the desktop's smooth fonts or, as in the installer's own Python, with the older X11 fonts.
+BASE_PX, HEAD_PX, TITLE_PX = -15, -17, -22
+FONT_CHOICES = ("Noto Sans", "Ubuntu", "Cantarell", "DejaVu Sans", "Liberation Sans",
+                "Segoe UI", "nimbus sans l", "helvetica")
+
+
+def pick_font_family(root):
+    available = {f.lower(): f for f in tkfont.families(root)}
+    for name in FONT_CHOICES:
+        if name.lower() in available:
+            return available[name.lower()]
+    return "TkDefaultFont"
+
+
+def apply_fonts(root):
+    family = pick_font_family(root)
+    for named in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont",
+                  "TkTooltipFont", "TkIconFont", "TkSmallCaptionFont"):
+        try:
+            tkfont.nametofont(named, root).configure(family=family, size=BASE_PX)
+        except tk.TclError:
+            pass
+    return family
+
+
 def apply_dark_theme(root):
     """Dark look for the window and for the Tk dialogs it opens (Yes/No questions)."""
+    family = apply_fonts(root)
     root.configure(bg=BG)
     for pattern, value in (("*Background", BG), ("*Foreground", FG),
                            ("*activeBackground", BUTTON_ACTIVE), ("*activeForeground", FG),
@@ -55,11 +83,11 @@ def apply_dark_theme(root):
         style.theme_use("clam")
     style.configure(".", background=BG, foreground=FG, fieldbackground=BUTTON,
                     bordercolor=BORDER, lightcolor=BG, darkcolor=BG, focuscolor=ACCENT,
-                    troughcolor=BUTTON, font=("TkDefaultFont", 11))
+                    troughcolor=BUTTON, font=(family, BASE_PX))
     style.configure("TFrame", background=BG)
     style.configure("TLabel", background=BG, foreground=FG)
-    style.configure("Title.TLabel", font=("TkDefaultFont", 16, "bold"))
-    style.configure("Head.TLabel", font=("TkDefaultFont", 12, "bold"))
+    style.configure("Title.TLabel", font=(family, TITLE_PX, "bold"))
+    style.configure("Head.TLabel", font=(family, HEAD_PX, "bold"))
     style.configure("Note.TLabel", foreground=MUTED)
     style.configure("Warn.TLabel", foreground=WARN)
     style.configure("TButton", background=BUTTON, foreground=FG, bordercolor=BORDER,
@@ -75,6 +103,12 @@ def apply_dark_theme(root):
               background=[("active", BG)],
               indicatorbackground=[("selected", ACCENT), ("active", BUTTON_ACTIVE)],
               foreground=[("disabled", DISABLED)])
+
+
+def installed_dir():
+    """The install folder if this copy was installed by the installer, else None (dev build)."""
+    d = config.data_dir()
+    return d if (d / "install.json").exists() and (d / "install.py").exists() else None
 
 
 class SetupWindow:
@@ -116,7 +150,7 @@ class SetupWindow:
                             command=self._refresh).grid(row=0, column=0, sticky="w")
             self.status[key] = ttk.Label(row, style="Note.TLabel")
             self.status[key].grid(row=0, column=1, sticky="e", padx=8)
-            self.install_btn[key] = ttk.Button(row, text="Install…",
+            self.install_btn[key] = ttk.Button(row, text="Install...",
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
@@ -152,7 +186,9 @@ class SetupWindow:
         urow.grid(row=r, sticky="w", pady=(2, 2))
         self.check_btn = ttk.Button(urow, text="Check for updates", command=self._check_updates)
         self.check_btn.grid(row=0, column=0)
-        ttk.Button(urow, text="Uninstall…", state="disabled").grid(row=0, column=1, padx=8)
+        self.uninstall_btn = ttk.Button(urow, text="Uninstall...", command=self._uninstall,
+                                        state="normal" if installed_dir() else "disabled")
+        self.uninstall_btn.grid(row=0, column=1, padx=8)
         ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
         r += 1
         self.update_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
@@ -226,7 +262,7 @@ class SetupWindow:
         self.capturing = True
         self.change_btn.configure(state="disabled")
         self.capture_msg.configure(text=f"Press the key or mouse button you want to use "
-                                        f"(waiting {CAPTURE_SECONDS} seconds)…")
+                                        f"(waiting {CAPTURE_SECONDS} seconds)...")
         self._refresh()
         threading.Thread(target=lambda: self.capture_q.put(plat.capture_next(CAPTURE_SECONDS)),
                          daemon=True).start()
@@ -257,7 +293,7 @@ class SetupWindow:
 
     def _check_updates(self):
         self.check_btn.configure(state="disabled")
-        self.update_msg.configure(text="Checking…", style="Note.TLabel")
+        self.update_msg.configure(text="Checking...", style="Note.TLabel")
         threading.Thread(target=lambda: self.update_q.put(updater.check_now()), daemon=True).start()
         self.root.after(150, self._poll_update)
 
@@ -286,14 +322,48 @@ class SetupWindow:
         self.update_row.grid()
 
     def _update_now(self):
-        # Installing updates arrives with the installer (next phase). For now, show the release.
-        if self.release and self.release.url:
-            subprocess.Popen(["xdg-open", self.release.url], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
-        self.update_msg.configure(text="Installing updates from here comes with the installer. "
-                                       "The release page is open in your browser.",
-                                  style="Note.TLabel")
-        self.update_row.grid_remove()
+        d = installed_dir()
+        if not d:
+            # Development build (not installed): just show the release.
+            if self.release and self.release.url:
+                subprocess.Popen(["xdg-open", self.release.url], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            self.update_msg.configure(text="This copy isn't installed, so it can't update itself. "
+                                           "The release page is open in your browser.",
+                                      style="Note.TLabel")
+            self.update_row.grid_remove()
+            return
+        if not messagebox.askyesno(
+                "Update FT Assistant",
+                f"Download and install version {self.release.version} now? FT Assistant restarts "
+                "when it's done, and the current version is kept so it can be rolled back.",
+                parent=self.root):
+            return
+        self._run_installer(d, ["update", "--dir", str(d)])
+        self.root.destroy()
+        sys.exit(0)
+
+    def _uninstall(self):
+        d = installed_dir()
+        if not d or not messagebox.askyesno(
+                "Uninstall FT Assistant",
+                "This opens a window that removes FT Assistant: the program, its Python, the speech "
+                "engine, GPU libraries, the Whisper model, and its menu and login entries. "
+                "Claude Code and OpenCode stay installed.\n\nContinue?", parent=self.root):
+            return
+        self._run_installer(d, ["uninstall", "--dir", str(d)])
+        self.root.destroy()
+        sys.exit(0)
+
+    def _run_installer(self, d, args):
+        """Run the installed installer in a visible terminal window."""
+        py = d / "python" / "bin" / "python3"
+        script = (" ".join(f"'{x}'" for x in [str(py), str(d / "install.py")] + args)
+                  + "; echo; read -p 'Press Enter to close this window. '")
+        argv = harness.terminal_command(["bash", "-c", script], str(d))
+        subprocess.Popen(argv, env=harness.clean_env(), start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
 
     def _not_now(self):
         if self.release:

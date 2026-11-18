@@ -32,7 +32,7 @@ _SHORTCUT = {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
              "ISO_Level3_Shift", "Super_L", "Super_R", "Meta_L", "Meta_R", "Hyper_L", "Hyper_R"}
 _OTHER_APPS = {"Escape", "Print"}
 
-GOOD_CHOICES = ("Caps Lock, Scroll Lock, Pause, Insert, the Menu key, F13–F24 if your keyboard "
+GOOD_CHOICES = ("Caps Lock, Scroll Lock, Pause, Insert, the Menu key, F13-F24 if your keyboard "
                 "has them, or a spare side button on your mouse. Pick one you can hold "
                 "comfortably while speaking.")
 BEST_AVOIDED = ("Letters, numbers, Space, Enter, Tab, Backspace and arrows (you need them to "

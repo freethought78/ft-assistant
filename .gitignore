@@ -3,3 +3,4 @@ models/
 *.log
 .lock
 __pycache__/
+dist/

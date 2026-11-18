@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import __version__, config, harness, textproc, updater
+from . import __version__, config, harness, open_setup, textproc, updater
 from . import platform_linux as plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -41,12 +41,16 @@ def setup_logging():
 
 
 def single_instance():
-    lock = open(config.config_dir() / ".lock", "w")
+    lock = open(config.config_dir() / ".lock", "a+")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         print("FT Assistant is already running.")
         raise SystemExit(0)
+    lock.seek(0)
+    lock.truncate()
+    lock.write(str(os.getpid()))      # lets the installer stop us for updates and uninstall
+    lock.flush()
     return lock
 
 
@@ -176,7 +180,8 @@ class App:
         """Show the setup screen in its own process; the Assistant key is paused meanwhile."""
         if self.setup_proc is not None:
             return
-        self.setup_proc = subprocess.Popen([sys.executable, "-m", "ft_assistant.setup_ui"])
+        argv, env = open_setup.command()
+        self.setup_proc = subprocess.Popen(argv, env=env)
         threading.Thread(target=self._wait_setup, daemon=True).start()
 
     def _wait_setup(self):
