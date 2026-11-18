@@ -18,7 +18,9 @@ Last updated: 2026-11-17
 4. **Always visible, never in the background.** The tool opens the chosen harness's
    **desktop app** and types the command there, so the user can see the agent working:
    - Claude Code → the **Claude desktop app**.
-   - OpenCode → the **OpenCode desktop app**.
+   - OpenCode → **OpenCode's own interface in a visible terminal window** (changed 2026-11-17:
+     its desktop app's new layout offers no way to start a session in a chosen folder; see
+     technical findings). Revisit if OpenCode adds that.
 
    No hidden or headless agent runs, ever.
 5. **Routing depends on the focused window:**
@@ -28,7 +30,9 @@ Last updated: 2026-11-17
    - **Anywhere else** → open a **new session** in the chosen harness's app and enter the
      rest of the dictation as the command.
 6. **New sessions have no project folder.** Same as starting a fresh Claude Code session
-   with no folder. If the user wants it to become a project, they say so in that session;
+   with no folder. **Exception: OpenCode requires a folder**, so its sessions use a neutral
+   `FT Assistant sessions` folder in the user's home (decided 2026-11-17); it appears once in
+   OpenCode's project list, and agents work there rather than in the whole home folder. If the user wants it to become a project, they say so in that session;
    the tool needs no special handling for that.
    - **"Assistant" with nothing after it** → open the chosen harness's app with a new, empty
      session, ready for the user. (If already in a harness app: nothing to type, so nothing happens.)
@@ -66,18 +70,64 @@ Last updated: 2026-11-17
 
 ### Open questions
 
-None right now. (Install itself is covered by the setup script section below.)
+None right now.
 
-### To verify before building (technical, not user decisions)
+### Technical findings (checked 2026-11-17 on Linux)
 
-- How to start a new session and enter a prompt in the **Claude desktop app** from outside it
-  (launch or raise its window, new-session action, type the prompt).
-- The same for the **OpenCode desktop app** (`ai.opencode.desktop` / `opencode-desktop`, both
-  installed on this machine).
-- How to tell which app has focus (X11 active window's `WM_CLASS`).
-- Keyword matching: case and punctuation Whisper adds ("Assistant,", "Assistant.").
-- Settings file location. Plan: `~/.config/ft-assistant/` on Linux, `%APPDATA%\FT Assistant\`
-  on Windows (chosen harness, Assistant key).
+- **Claude desktop app (v45.2.1): works end to end (live-tested).**
+  `claude-desktop "claude://code/new?q=<text>"` (`prompt=` also works; capped at 14,336
+  characters) opens a new Claude Code session with the text **filled in but not sent**.
+  The tool then presses **Enter** once the Claude window is in front (~4 s in the test), and the
+  session runs with **no folder** (listed under "This computer"), matching decision 6.
+  The app registers the `claude://` link type, so the same link should work on Windows.
+- **OpenCode desktop app (1.18.x, and 1.19.6 after updating on 2026-11-17, live-retested):
+  the link is ignored in its "New layout".** `opencode://new-session?directory=<folder>&prompt=<text>` reaches the app
+  (its log says "deep link received"), but only the **old layout** acts on it. The user has
+  OpenCode's **"New layout"** switched on (Settings → General), which OpenCode describes as
+  switchable "for a limited time", so the old layout, and with it the link, will likely go away.
+  The local server needs a login token (401), so that's no route either.
+- **OpenCode keyboard route (live-tested):** with the OpenCode window in front, **Ctrl+Shift+S**
+  opens a "New session" tab with the message box ready. Typing the command and pressing Enter
+  would send it. Catch: the session goes to **OpenCode's last-used project** (in the test,
+  "kit biz"), not the neutral `FT Assistant sessions` folder. **The user rejected this as is
+  (2026-11-17): Assistant commands must never land in an unrelated project.** Only usable if the
+  session can be pointed at the neutral folder first. In the test nothing was typed or sent;
+  only an empty "New session" tab was opened.
+- **Telling which app you're typing in** works via the focused window's `WM_CLASS`:
+  Claude = `com.anthropic.Claude`, OpenCode desktop = `ai.opencode.desktop`. OpenCode in a
+  terminal: the terminal's window title starts with `OC | `. (Windows: the focused
+  window's program name instead.)
+- **Keyword matching**, tested by feeding synthetic speech through the real Whisper worker:
+  Whisper writes "Assistant," / "Assistant" / "Assistant Setup" (capitalized, sometimes a comma)
+  and leaves "The assistant said…" alone. So: compare the first word case-insensitively, ignore
+  punctuation right after it, and match "assistant setup" the same way.
+- **Settings file location** (plan): `~/.config/ft-assistant/` on Linux,
+  `%APPDATA%\FT Assistant\` on Windows (chosen harness, Assistant key).
+
+### Still to verify
+
+- **OpenCode route (settled below).** Code reading of OpenCode desktop 1.19.6 (2026-11-17):
+  - The **new layout has no outside way to start a session in a chosen folder**: no link
+    handling, no "open project" command, and its new-session shortcut copies the folder of
+    whatever tab is open (else the most recent project). Its local server uses a random
+    password per launch that isn't stored anywhere readable. So: not possible today.
+  - **Old layout + link:** `opencode://new-session?directory=…&prompt=…` handles the folder and
+    text. Needs the user to switch off "New layout"; likely breaks when OpenCode retires the
+    old layout. Not yet live-tested in the old layout.
+  - **OpenCode in a terminal window:** the `opencode` command (installed, 1.18.14) takes a folder
+    and a prompt: `opencode <folder> --prompt "<text>"`. Visible and interactive, works with
+    any desktop layout and on Windows, but it's OpenCode's terminal interface, not the desktop
+    app (decision 4 says desktop app). Not yet live-tested.
+  - **Ask OpenCode** to support the link in the new layout (a feature request on their GitHub).
+  - **Decided (2026-11-17): terminal window.** Live-tested with a throwaway folder:
+    `opencode <folder> --prompt "<text>"` in a terminal opened OpenCode in that folder and
+    **sent the message by itself** (replied "OK"). The window title reads `OC | <session title>`,
+    which can tell the tool you're typing in OpenCode. The user also asked for a feature request
+    draft for OpenCode: `docs/opencode-feature-request.md`.
+- **Claude when the app isn't running yet** (does the link start it and still deliver the text?).
+- **Typing into an already-open conversation** (routing rule 5): plain typing into the focused
+  window, as dictation does today; confirm it lands in the message box.
+- **The Windows side of all of the above** (needs a Windows machine).
 
 ## Feature: distribution as one small setup script
 
