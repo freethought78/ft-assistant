@@ -1,0 +1,4 @@
+# Words or names Whisper gets wrong go here, one per line.
+# The model is nudged toward these spellings. Lines starting with # are ignored.
+Discord
+Claude

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Voice Dictation
+Comment=Hold mouse button 12 to dictate into any window (local Whisper)
+Exec=/home/ft/.local/share/voice-dictation/run.sh
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+NoDisplay=false
