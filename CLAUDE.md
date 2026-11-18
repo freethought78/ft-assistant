@@ -86,6 +86,15 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
   project. (OpenCode's new-session shortcut lands in the last-used project, so it must not be
   used to send anything until it can be pointed at a neutral folder.)
 
+## GitHub
+
+- This project's GitHub home is the user's **older account, `freethought78`**. **Never use the
+  `ftftft78` account** for this project (repo, releases, issues, PRs), even though the `gh` CLI
+  on this machine is currently signed in only as `ftftft78`. Before any GitHub step, check
+  `gh auth status` shows `freethought78` as the active account; if not, ask the user to sign in
+  (`gh auth login`) or switch (`gh auth switch`) themselves.
+- The repo doesn't exist on GitHub yet; create it only with the user's go-ahead.
+
 ## Working with the user
 
 - They dictate, so prefer one-click choices (buttons or options) over questions that need typed answers.
