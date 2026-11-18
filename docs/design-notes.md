@@ -16,26 +16,29 @@ Last updated: 2026-11-17
 3. **The keyword sends the rest of the dictation to the user's chosen assistant** (code harness):
    either **Claude Code** or **OpenCode**, picked in the setup screen.
 4. **Always visible, never in the background.** The tool opens the chosen harness's
-   **desktop app** and types the command there, so the user can see the agent working:
-   - Claude Code → the **Claude desktop app**.
-   - OpenCode → **OpenCode's own interface in a visible terminal window** (changed 2026-11-17:
-     its desktop app's new layout offers no way to start a session in a chosen folder; see
-     technical findings). Revisit if OpenCode adds that.
+   **command-line (CLI) version in a visible terminal window**, starts it with the command,
+   and the user watches the agent work there and can keep talking to it:
+   - Claude Code → `claude` (the Claude Code CLI) in a terminal window.
+   - OpenCode → `opencode` (the OpenCode CLI) in a terminal window.
 
-   No hidden or headless agent runs, ever.
+   Changed 2026-11-17 (was: desktop apps). Reasons: OpenCode's desktop app can't be pointed at a
+   folder from outside, and the user prefers one consistent approach. Both CLIs are full agents
+   that **can make changes on the host system** (edit files anywhere they're allowed, run shell
+   commands), asking for permission as configured. No hidden or headless agent runs, ever.
 5. **Routing depends on the focused window:**
-   - **Already typing in a harness app** (Claude or OpenCode, **even if it's not the chosen one**)
+   - **Already typing in a harness terminal** (Claude Code or OpenCode, **even if it's not the chosen one**)
      → strip "Assistant" from the start and type the rest into the current conversation.
      No new session.
    - **Anywhere else** → open a **new session** in the chosen harness's app and enter the
      rest of the dictation as the command.
-6. **New sessions have no project folder.** Same as starting a fresh Claude Code session
-   with no folder. **Exception: OpenCode requires a folder**, so its sessions use a neutral
-   `FT Assistant sessions` folder in the user's home (decided 2026-11-17); it appears once in
-   OpenCode's project list, and agents work there rather than in the whole home folder. If the user wants it to become a project, they say so in that session;
+6. **New sessions start in a neutral folder, not a project.** A CLI always runs in some folder,
+   so both harnesses start in a dedicated `FT Assistant sessions` folder in the user's home
+   (decided 2026-11-17). Agents can still reach the rest of the system when asked; it's only
+   their starting point. Never an unrelated existing project. If the user wants it to become a project, they say so in that session;
    the tool needs no special handling for that.
-   - **"Assistant" with nothing after it** → open the chosen harness's app with a new, empty
-     session, ready for the user. (If already in a harness app: nothing to type, so nothing happens.)
+   - **"Assistant" with nothing after it** → open the chosen harness in a new terminal window
+     with an empty session, ready for the user. (If already in a harness terminal: nothing to
+     type, so nothing happens.)
 7. **"Assistant setup"** opens a small configuration screen:
    - It appears automatically the **first time the software is installed**, so a harness is
      always chosen before the keyword is used.
@@ -70,9 +73,17 @@ Last updated: 2026-11-17
 
 ### Open questions
 
-None right now.
+- **Already in a harness terminal, saying "Assistant, …":** type and also send (press Enter),
+  or type only? (Asked 2026-11-17, not yet answered.)
+- **Permission prompts by voice:** both CLIs ask before risky actions (a menu you answer with
+  keys). Should the user be able to answer those by voice, or by keyboard only?
+- **Which terminal window** to open on each system (Linux: the system's default terminal;
+  Windows: Windows Terminal if present, else PowerShell's console).
 
 ### Technical findings (checked 2026-11-17 on Linux)
+
+The desktop-app findings below are kept for the record; since the switch to CLIs (decision 4)
+only the OpenCode CLI, focus detection and keyword results apply directly.
 
 - **Claude desktop app (v45.2.1): works end to end (live-tested).**
   `claude-desktop "claude://code/new?q=<text>"` (`prompt=` also works; capped at 14,336
@@ -104,30 +115,39 @@ None right now.
 - **Settings file location** (plan): `~/.config/ft-assistant/` on Linux,
   `%APPDATA%\FT Assistant\` on Windows (chosen harness, Assistant key).
 
-### Still to verify
+### OpenCode route (settled 2026-11-17)
 
-- **OpenCode route (settled below).** Code reading of OpenCode desktop 1.19.6 (2026-11-17):
-  - The **new layout has no outside way to start a session in a chosen folder**: no link
-    handling, no "open project" command, and its new-session shortcut copies the folder of
-    whatever tab is open (else the most recent project). Its local server uses a random
-    password per launch that isn't stored anywhere readable. So: not possible today.
-  - **Old layout + link:** `opencode://new-session?directory=…&prompt=…` handles the folder and
-    text. Needs the user to switch off "New layout"; likely breaks when OpenCode retires the
-    old layout. Not yet live-tested in the old layout.
-  - **OpenCode in a terminal window:** the `opencode` command (installed, 1.18.14) takes a folder
-    and a prompt: `opencode <folder> --prompt "<text>"`. Visible and interactive, works with
-    any desktop layout and on Windows, but it's OpenCode's terminal interface, not the desktop
-    app (decision 4 says desktop app). Not yet live-tested.
-  - **Ask OpenCode** to support the link in the new layout (a feature request on their GitHub).
-  - **Decided (2026-11-17): terminal window.** Live-tested with a throwaway folder:
-    `opencode <folder> --prompt "<text>"` in a terminal opened OpenCode in that folder and
-    **sent the message by itself** (replied "OK"). The window title reads `OC | <session title>`,
-    which can tell the tool you're typing in OpenCode. The user also asked for a feature request
-    draft for OpenCode: `docs/opencode-feature-request.md`.
-- **Claude when the app isn't running yet** (does the link start it and still deliver the text?).
-- **Typing into an already-open conversation** (routing rule 5): plain typing into the focused
-  window, as dictation does today; confirm it lands in the message box.
-- **The Windows side of all of the above** (needs a Windows machine).
+Code reading of OpenCode desktop 1.19.6:
+- The **new layout has no outside way to start a session in a chosen folder**: no link
+  handling, no "open project" command, and its new-session shortcut copies the folder of
+  whatever tab is open (else the most recent project). Its local server uses a random
+  password per launch that isn't stored anywhere readable.
+- **Old layout + link** (`opencode://new-session?directory=…&prompt=…`) handles folder and text,
+  but needs "New layout" switched off and will likely break when OpenCode retires the old
+  layout. Not used.
+- **Chosen: OpenCode's interface in a terminal window.** `opencode <folder> --prompt "<text>"`
+  (CLI updated to 1.19.6). Live-tested in a throwaway folder: it opened in that folder and
+  **sent the message by itself** (replied "OK"). The window title reads `OC | <session title>`.
+- A feature request asking OpenCode to support the link in the new layout is drafted in
+  `docs/opencode-feature-request.md` for the user to post. If OpenCode adds it, revisit.
+
+### Verification status (after the switch to CLIs)
+
+- **OpenCode CLI:** verified. `opencode <folder> --prompt "<text>"` opens visibly in that folder
+  and sends the message. Installed size 412 MB (npm package `opencode-ai` 1.19.6, measured).
+- **Claude Code CLI:** verified (installed 2026-11-17 with npm, `@anthropic-ai/claude-code`
+  2.1.327, 356 MB; the user signed in with their Pro plan). `claude "<text>"` started in a
+  throwaway folder opened an interactive session and **sent the message by itself** (replied "OK").
+  Notes for building and setup:
+  - **First run shows one-time setup screens** (text style, security notes, folder trust).
+    The user must go through them once; setup should tell new users to expect this.
+  - **Auto mode is now Claude Code's default permission mode:** it handles low-risk actions
+    itself and only asks about risky ones, which keeps permission prompts rare.
+  - Launch it with a clean environment: started from inside another Claude session it inherited
+    a "child session" marker and turned off transcript saving.
+  - Still to check: what the terminal title shows (for "already in Claude" detection).
+- **Typing into an already-open conversation:** plain typing works in terminals today.
+- **The Windows side:** needs a Windows machine.
 
 ## Feature: distribution as one small setup script
 
@@ -139,7 +159,7 @@ None right now.
    The project itself can grow as large as it needs to; only the thing you hand out stays small.
 3. **From zero:** on first run the script shows the setup screen (harness choice), then installs
    whatever is missing: Python runtime, speech engine, GPU libraries if there's an NVIDIA card,
-   the Whisper model, and the chosen harness's desktop app (with the user's consent).
+   the Whisper model, and the chosen harness's CLI (with the user's consent).
 4. **Hardware detection:** setup checks for an NVIDIA GPU and picks the GPU path with
    large-v3-turbo, or a CPU path with a smaller model.
 
@@ -150,9 +170,9 @@ None right now.
 6. **The setup script is the installer.** There's no separate installer for new users.
 7. **Clean install flow** (first install, or reinstall with no trace of the tool or its stack):
    1. Tell the user to **wait a moment while requirements are checked** (OS, NVIDIA GPU or not,
-      what's already installed, e.g. a harness app).
+      what's already installed, e.g. a harness CLI).
    2. **Show the approximate total download size** of the components still needed, with a short
-      breakdown (Python runtime, speech engine, GPU libraries, Whisper model, harness app if chosen),
+      breakdown (Python runtime, speech engine, GPU libraries, Whisper model, harness CLI if needed),
       and the disk space needed, **before anything big is downloaded**.
    3. Only then download and finish setup. When some components already exist, the summary
       shows only what's still missing.
@@ -234,4 +254,9 @@ Hold-to-talk also has to ignore the key's auto-repeat.
 
 ### Open questions
 
-None right now.
+- **Already in a harness terminal, saying "Assistant, …":** type and also send (press Enter),
+  or type only? (Asked 2026-11-17, not yet answered.)
+- **Permission prompts by voice:** both CLIs ask before risky actions (a menu you answer with
+  keys). Should the user be able to answer those by voice, or by keyboard only?
+- **Which terminal window** to open on each system (Linux: the system's default terminal;
+  Windows: Windows Terminal if present, else PowerShell's console).
