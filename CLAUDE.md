@@ -30,6 +30,15 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
 
 `~/bin/start-whisper-stt` is an **older, unrelated** script (a whisper-fastapi server). It isn't part of this tool.
 
+### Branches: live vs. redesign
+
+- **`main` = the live tool.** It matches what's deployed. Only small fixes the user asks for go here.
+- **`next` = the redesign** (started 2026-11-17): discussion, then implementation. It never deploys.
+  When the user says they're satisfied, merge `next` into `main`, then deploy. Not before.
+- `deploy.sh --yes` refuses unless the checkout is on `main` with no uncommitted changes.
+- Check which branch is checked out before editing. For a live fix while on `next`: commit or stash,
+  switch to `main`, fix, commit, deploy, switch back, and merge `main` into `next`.
+
 ### Deploying
 
 - `./deploy.sh` — dry run: prints a diff of every file where repo and live differ. Changes nothing.

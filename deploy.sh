@@ -56,6 +56,17 @@ if [[ "${1:-}" != "--yes" ]]; then
   exit 0
 fi
 
+# Only committed code from main may go live; the redesign lives on `next` until it's merged.
+branch=$(git -C "$REPO" symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
+if [[ "$branch" != "main" ]]; then
+  echo "Refusing to deploy: on branch '$branch'. Only main deploys to the live tool."
+  exit 1
+fi
+if [[ -n "$(git -C "$REPO" status --porcelain)" ]]; then
+  echo "Refusing to deploy: uncommitted changes. Commit them to main first."
+  exit 1
+fi
+
 # Refuse to deploy Python that doesn't compile.
 for f in dictate.py whisper_worker.py; do
   "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])" "$REPO/$f"
