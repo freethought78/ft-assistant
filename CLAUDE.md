@@ -81,6 +81,11 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
 - **Never log what the user says.** On 2026-11-17 they had transcript logging turned off and the old log deleted.
   Don't add any log line, debug print or file that records transcript text. If debugging needs the text, ask first and remove it afterwards.
 
+- **Testing against Claude or OpenCode:** never type, send or create test input in any of the user's
+  existing projects or sessions. Tests may only use a throwaway or neutral folder made for this
+  project. (OpenCode's new-session shortcut lands in the last-used project, so it must not be
+  used to send anything until it can be pointed at a neutral folder.)
+
 ## Working with the user
 
 - They dictate, so prefer one-click choices (buttons or options) over questions that need typed answers.
