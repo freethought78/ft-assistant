@@ -299,6 +299,10 @@ Settings -> Apps and finishes deleting itself after uninstall exits.
 **Verified in the bottle (one Wine session, user at the keyboard):** setup file (steps, progress
 bars), first-run setup, key capture (Scroll Lock), in-place key switch, two dictations typed into
 Notepad (~1.5 s on the CPU with small.en), "Assistant setup" reopening the screen.
+**Linux recheck after phase 5 (2026-11-18):** fresh install into a throwaway folder: all six
+steps shown, Python 3.12.3 and the existing model reused (plain hard-linked files, no extra disk),
+GPU transcription kept "Assistant", the installed copy handled key presses (Pause) and released
+everything, uninstall stopped it and removed it; the live tool's model was untouched.
 **Not verifiable in Wine:** the NVIDIA/CUDA path, Windows toasts, Windows Terminal, the Startup
 folder entry and Settings -> Apps; these need one pass on a real Windows PC before release.
 
