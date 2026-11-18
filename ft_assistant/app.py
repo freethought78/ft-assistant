@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import __version__, config, harness, textproc
+from . import __version__, config, harness, textproc, updater
 from . import platform_linux as plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -192,6 +192,34 @@ class App:
             os.execv(sys.executable, [sys.executable, "-m", "ft_assistant"])
         self.setup_proc = None
 
+    # ---- update check (background thread)
+
+    def busy(self):
+        return self.down or self.jobs.unfinished_tasks or self.setup_proc is not None
+
+    def update_loop(self):
+        """About a minute after start, then hourly: if a day has passed since the last check,
+        check GitHub (never during a dictation) and notify about a newer version."""
+        time.sleep(float(os.environ.get("FT_ASSISTANT_UPDATE_DELAY", 60)))
+        tick = float(os.environ.get("FT_ASSISTANT_UPDATE_TICK", 3600))
+        while True:
+            try:
+                while self.busy():
+                    time.sleep(30)
+                if updater.due_for_check(updater.load_state()):
+                    rel = updater.check()
+                    state = updater.load_state()
+                    if updater.should_notify(rel, state):
+                        updater.mark_notified(state, rel.version)
+                        updater.save_state(state)
+                        log.info("update available: %s", rel.version)
+                        plat.notify_with_action(
+                            f"FT Assistant {rel.version} is available. Click to see what's new, "
+                            "or say \"Assistant setup\".", "Show", self.open_setup)
+            except Exception:
+                log.exception("update check failed")
+            time.sleep(tick)
+
     def release_resources(self):
         """Close the tool's own mic stream and stop the engine right after each dictation.
         The system microphone itself is never muted or changed."""
@@ -217,6 +245,7 @@ def main():
     settings = config.load()
     app = App(settings, log_file)
     threading.Thread(target=app.worker, daemon=True).start()
+    threading.Thread(target=app.update_loop, daemon=True).start()
     trig = settings.trigger
     log.info("ready: version %s, Assistant key %s, harness %s", __version__,
              trig.get("keysym") or f"mouse button {trig.get('button')}",

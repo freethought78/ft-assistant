@@ -246,6 +246,21 @@ def notify(msg, title="FT Assistant"):
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def notify_with_action(msg, action_label, on_click, title="FT Assistant"):
+    """A normal notification (never steals focus) with one button; `on_click` runs if the
+    user clicks it. Waits in a background thread."""
+    def run():
+        try:
+            r = subprocess.run(["notify-send", "-a", "FT Assistant", "-t", "15000",
+                                "-A", f"open={action_label}", title, msg],
+                               capture_output=True, text=True, timeout=24 * 3600)
+        except Exception:
+            return
+        if r.stdout.strip() == "open":
+            on_click()
+    threading.Thread(target=run, daemon=True).start()
+
+
 # ---------------------------------------------------------------- key capture (setup screen)
 
 @functools.lru_cache(maxsize=1)

@@ -10,7 +10,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from . import config, harness, keys
+from . import __version__, config, harness, keys, updater
 from . import platform_linux as plat
 
 CHANGED = 10
@@ -145,15 +145,28 @@ class SetupWindow:
                   style="Note.TLabel").grid(row=r, sticky="w", pady=(2, 14))
         r += 1
 
-        # ---- updates / uninstall (later phases)
+        # ---- updates / uninstall
         ttk.Label(f, text="Updates and uninstall", style="Head.TLabel").grid(row=r, sticky="w")
         r += 1
         urow = ttk.Frame(f)
-        urow.grid(row=r, sticky="w", pady=(2, 14))
-        ttk.Button(urow, text="Check for updates", state="disabled").grid(row=0, column=0)
+        urow.grid(row=r, sticky="w", pady=(2, 2))
+        self.check_btn = ttk.Button(urow, text="Check for updates", command=self._check_updates)
+        self.check_btn.grid(row=0, column=0)
         ttk.Button(urow, text="Uninstall…", state="disabled").grid(row=0, column=1, padx=8)
-        ttk.Label(urow, text="Coming in a later version.", style="Note.TLabel").grid(
-            row=0, column=2)
+        ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
+        r += 1
+        self.update_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
+        self.update_msg.grid(row=r, sticky="w", pady=(4, 2))
+        r += 1
+        self.update_row = ttk.Frame(f)
+        self.update_row.grid(row=r, sticky="w", pady=(2, 14))
+        ttk.Button(self.update_row, text="Update now", command=self._update_now).grid(
+            row=0, column=0)
+        ttk.Button(self.update_row, text="Not now", command=self._not_now).grid(
+            row=0, column=1, padx=8)
+        self.update_row.grid_remove()
+        self.update_q = queue.Queue()
+        self.release = None
         r += 1
 
         # ---- save / cancel
@@ -163,6 +176,9 @@ class SetupWindow:
         self.save_btn = ttk.Button(brow, text="Save", command=self._save)
         self.save_btn.grid(row=0, column=1)
 
+        rel = updater.known_update()
+        if rel:
+            self._show_update(rel)
         root.protocol("WM_DELETE_WINDOW", self._cancel)
         root.bind("<FocusIn>", lambda e: self._refresh())   # e.g. after installing
         self._refresh()
@@ -236,6 +252,57 @@ class SetupWindow:
             self.capture_msg.configure(text=f"New Assistant key: {keys.display_name(trig)}. "
                                             "Click Save to use it.")
         self._refresh()
+
+    # ---- updates
+
+    def _check_updates(self):
+        self.check_btn.configure(state="disabled")
+        self.update_msg.configure(text="Checking…", style="Note.TLabel")
+        threading.Thread(target=lambda: self.update_q.put(updater.check_now()), daemon=True).start()
+        self.root.after(150, self._poll_update)
+
+    def _poll_update(self):
+        try:
+            status, rel = self.update_q.get_nowait()
+        except queue.Empty:
+            self.root.after(150, self._poll_update)
+            return
+        self.check_btn.configure(state="normal")
+        if status == "update":
+            self._show_update(rel)
+        elif status == "latest":
+            self.update_row.grid_remove()
+            self.update_msg.configure(text=f"You have the latest version ({__version__}).",
+                                      style="Note.TLabel")
+        else:
+            self.update_msg.configure(text="Couldn't reach GitHub. Check your internet "
+                                           "connection and try again later.", style="Warn.TLabel")
+
+    def _show_update(self, rel):
+        self.release = rel
+        notes = "\n".join(rel.notes.splitlines()[:8]) or "(no release notes)"
+        self.update_msg.configure(text=f"Version {rel.version} is available.\n\nWhat's new:\n"
+                                       f"{notes}", style="Warn.TLabel")
+        self.update_row.grid()
+
+    def _update_now(self):
+        # Installing updates arrives with the installer (next phase). For now, show the release.
+        if self.release and self.release.url:
+            subprocess.Popen(["xdg-open", self.release.url], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        self.update_msg.configure(text="Installing updates from here comes with the installer. "
+                                       "The release page is open in your browser.",
+                                  style="Note.TLabel")
+        self.update_row.grid_remove()
+
+    def _not_now(self):
+        if self.release:
+            state = updater.load_state()
+            updater.mark_not_now(state, self.release.version)
+            updater.save_state(state)
+        self.update_row.grid_remove()
+        self.update_msg.configure(text="OK. You'll get one more reminder in a few days.",
+                                  style="Note.TLabel")
 
     # ---- closing
 

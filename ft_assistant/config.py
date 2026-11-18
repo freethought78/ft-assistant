@@ -29,6 +29,11 @@ def config_dir():
     return Path(base) / "ft-assistant"
 
 
+def update_url():
+    """Testing hook: check this URL instead of GitHub (e.g. a local pretend release)."""
+    return os.environ.get("FT_ASSISTANT_UPDATE_URL") or None
+
+
 def data_dir():
     """Where the installed program, its Python runtime and the Whisper model live."""
     override = os.environ.get("FT_ASSISTANT_DATA_DIR")
