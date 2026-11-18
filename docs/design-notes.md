@@ -14,6 +14,9 @@ Last updated: 2026-11-17 (full review and cleanup)
   launcher fix. **First real update:** the user's v0.1.0 found it with "Check for updates",
   "Update now" handed over to the new installer, and 0.2.0 started by itself; v0.1.0 is kept in
   `app.previous` for rollback.
+- **v0.2.1** (2026-11-18): setup fix found by the first test on a real Windows PC: the
+  install-folder prompt showed no folder (PowerShell read `$default?` as one variable name).
+  Also tidied the size table. The app itself is unchanged.
 
 ## Carried over from the current tool (unchanged)
 
