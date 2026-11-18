@@ -157,10 +157,22 @@ Hold-to-talk also has to ignore the key's auto-repeat.
    **leaves the Claude and OpenCode apps installed** (they're separate programs the user may still
    want), saying so.
 
-5. **Updates are never installed without asking.** When a newer release is found, the tool shows
-   a small prompt (version and what's new) with "Update now" / "Not now"; the setup screen also
-   has a "Check for updates" button. Plan: check at most once a day, quietly, and skip it if
-   offline. Updating backs up the current version so it can be rolled back.
+5. **Updates are never installed without asking.** (Detailed 2026-11-17.)
+   - **How:** one request to GitHub's public "latest release" API for the project's repo (no
+     account, no user data). Compare its version with the installed one; if newer, read that
+     release's notes for "what's new". Offline or no answer → give up silently, retry next time.
+   - **When:** about a minute after the tool starts (normally just after login), then at most once
+     every 24 hours while running. **Never during a dictation** (waits until the Assistant key is
+     released). Also on demand via a **"Check for updates"** button on the setup screen.
+   - **How the user is told:** a normal **system notification** (Linux notification bubble,
+     Windows toast), e.g. "FT Assistant 1.3 is available". **No pop-up window and no focus
+     stealing** (the user may be typing or playing a game).
+     - Clicking the notification, or saying "Assistant setup", opens the setup screen showing the
+       new version, what's new, and **Update now** / **Not now**.
+     - **Not now** → quiet about that version for a few days, then one more reminder.
+       A newer release resets this.
+   - **Nothing is downloaded until "Update now".** Updating backs up the current version so it
+     can be rolled back.
 
 8. **On a clean machine the size summary is plain text, before any download** (decided
    2026-11-17). The setup script's own console window shows "checking requirements", then the
