@@ -52,6 +52,13 @@ Last updated: 2026-11-17 (full review and cleanup)
    so both harnesses start in a dedicated `FT Assistant sessions` folder in the user's home.
    That's only the starting point: agents can still work elsewhere when asked, and the user can
    turn a session into a project by saying so in it. Never an unrelated existing project.
+   - **One ongoing conversation, no build-up** (decided 2026-11-18 after the first live test):
+     "Assistant, …" from outside a harness terminal continues the **last conversation** in that
+     folder (Claude Code `--continue`; OpenCode `--session <newest id in that folder>`), and if
+     that conversation's window is still open it's brought to the front and the request is sent
+     there instead of opening another window. A brand-new conversation only starts when none
+     exists yet. Live-tested with Claude Code: both cases worked.
+   - The folder-trust question appears once, the first time Claude Code sees the folder.
 7. **Permission prompts are answered by keyboard only.** When an agent asks to approve a risky
    action, the user presses the key; voice never approves anything, so a misheard word can't
    authorize an action. (Claude Code's default auto mode keeps these prompts rare.)

@@ -1,0 +1,205 @@
+"""Main process: hold the Assistant key, speak, release.
+
+- Normal dictation is typed into the focused window.
+- "Assistant, <request>" goes to the chosen code agent (Claude Code or OpenCode) in a visible
+  terminal window, or straight into the agent's terminal if you're already typing in one.
+- "Assistant setup" opens the setup screen.
+
+What the user says is never written to the log; only sizes and timings are."""
+
+import fcntl
+import logging
+import os
+import queue
+import threading
+import time
+
+import numpy as np
+
+from . import __version__, config, harness, textproc
+from . import platform_linux as plat
+from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
+from .engine import Engine
+
+MIN_SEC = 0.35             # ignore taps shorter than this
+MIN_RMS = 0.002            # ignore near-silent recordings
+OPENED_WINDOW_WAIT = 8.0   # seconds to watch for the terminal window we just opened
+
+log = logging.getLogger("ft_assistant")
+
+
+def setup_logging():
+    d = config.config_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    log_file = d / "ft-assistant.log"
+    logging.basicConfig(filename=log_file, level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    return log_file
+
+
+def single_instance():
+    lock = open(config.config_dir() / ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("FT Assistant is already running.")
+        raise SystemExit(0)
+    return lock
+
+
+class App:
+    def __init__(self, settings, log_file):
+        self.settings = settings
+        self.rec = Recorder()
+        self.engine = Engine(log_file)
+        self.jobs = queue.Queue()
+        self.ctl = threading.Lock()
+        self.down = False
+        self.our_windows = set()        # terminal windows this tool opened for an agent
+        self.agent_window = {}          # harness key -> its most recent window we opened
+        self.caps_trigger = (settings.trigger.get("type") == "key"
+                             and settings.trigger.get("keysym") == "Caps_Lock")
+
+    # ---- key handling (called from the listener thread)
+
+    def on_press(self):
+        with self.ctl:
+            if self.down:
+                return
+            self.down = True
+            try:
+                self.rec.start()
+            except Exception as e:
+                self.down = False
+                log.exception("mic failed")
+                plat.notify(f"Microphone error: {e}")
+                return
+        self.engine.warm()
+        beep(START_BEEP)
+
+    def on_release(self):
+        with self.ctl:
+            if not self.down:
+                return
+            self.down = False
+            audio = self.rec.stop()
+        if self.caps_trigger:
+            plat.caps_lock_off()        # Caps Lock is never left on
+        beep(STOP_BEEP)
+        # Remember where the user was when they let go; that decides where text goes.
+        self.jobs.put((audio, plat.active_window()))
+
+    # ---- processing (worker thread)
+
+    def worker(self):
+        while True:
+            audio, focus = self.jobs.get()
+            try:
+                self.process(audio, focus)
+            except Exception as e:
+                log.exception("processing failed")
+                plat.notify(f"Error: {e}")
+            finally:
+                self.jobs.task_done()
+                self.release_resources()
+
+    def process(self, audio, focus):
+        dur = len(audio) / SAMPLE_RATE
+        rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+        if dur < MIN_SEC or rms < MIN_RMS:
+            log.info("skipped (dur=%.2fs rms=%.4f)", dur, rms)
+            return
+        t = time.time()
+        raw = self.engine.transcribe(audio)
+        text = textproc.clean_text(raw)
+        cmd = textproc.parse_command(text)
+        log.info("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
+        if self.caps_trigger:
+            plat.caps_lock_off()
+        if cmd.kind == "dictate":
+            if cmd.text:
+                plat.type_text(cmd.text + " ")
+        elif cmd.kind == "setup":
+            self.open_setup()
+        else:
+            self.run_assistant(cmd.text, focus)
+
+    def in_harness(self, focus):
+        wid, cls, title = focus
+        if wid is None:
+            return False
+        if wid in self.our_windows:
+            return True
+        return plat.is_terminal_class(cls) and harness.harness_from_title(title) is not None
+
+    def run_assistant(self, text, focus):
+        if self.in_harness(focus):
+            if text:
+                plat.type_text(text)
+                plat.press_enter()
+            return
+        self.settings = config.load()          # pick up changes made in the setup screen
+        if not self.settings.harness_chosen:
+            plat.notify("No assistant chosen yet. Hold the Assistant key and say "
+                        "\"Assistant setup\".")
+            return
+        key = self.settings.harness
+        # One ongoing conversation: if its window is still open, bring it forward and send there.
+        wid = self.agent_window.get(key)
+        if wid is not None and wid in plat.terminal_windows() and plat.activate_window(wid):
+            if text:
+                plat.type_text(text)
+                plat.press_enter()
+            log.info("sent to the open %s window", key)
+            return
+        before = plat.terminal_windows()
+        h = harness.open_session(key, text)
+        log.info("opened %s window", h.key)
+        threading.Thread(target=self._remember_new_window, args=(key, before), daemon=True).start()
+
+    def _remember_new_window(self, key, before):
+        end = time.time() + OPENED_WINDOW_WAIT
+        while time.time() < end:
+            time.sleep(0.3)
+            now = plat.terminal_windows()
+            new = now - before
+            if new:
+                self.our_windows = (self.our_windows & now) | new   # forget closed windows
+                self.agent_window[key] = max(new)
+                return
+
+    def open_setup(self):
+        # The setup screen is built in the next phase.
+        plat.notify("The setup screen isn't built yet in this development version.")
+
+    def release_resources(self):
+        """Close the tool's own mic stream and stop the engine right after each dictation.
+        The system microphone itself is never muted or changed."""
+        with self.ctl:
+            if self.down or self.jobs.unfinished_tasks:
+                return
+            self.rec.close()
+        self.engine.stop()
+
+
+def main():
+    log_file = setup_logging()
+    _lock = single_instance()  # noqa: F841 (held for the life of the process)
+    problem = plat.session_problem()
+    if problem:
+        log.error(problem)
+        plat.notify(problem)
+        raise SystemExit(1)
+    # The speech worker reads these (the vocabulary file is re-read on every dictation).
+    os.environ.setdefault("FT_ASSISTANT_VOCAB", str(config.config_dir() / "vocabulary.txt"))
+    os.environ.setdefault("FT_ASSISTANT_MODELS_DIR", str(config.data_dir() / "models"))
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")      # the model is downloaded at setup only
+    settings = config.load()
+    app = App(settings, log_file)
+    threading.Thread(target=app.worker, daemon=True).start()
+    trig = settings.trigger
+    log.info("ready: version %s, Assistant key %s, harness %s", __version__,
+             trig.get("keysym") or f"mouse button {trig.get('button')}",
+             settings.harness or "(not chosen)")
+    print("FT Assistant ready.")
+    plat.TriggerListener(trig, app.on_press, app.on_release).run()   # blocks forever

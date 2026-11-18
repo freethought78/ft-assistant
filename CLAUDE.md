@@ -37,7 +37,12 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
   Windows testing uses only the existing Bottles bottle **`DannyRando-Test`** (Flatpak Bottles).
   Never create new bottles for this project, and never run anything in the user's other bottles
   (they're games and apps).
-  The agreed design lives in `docs/design-notes.md`. Update it as decisions are made, and don't build
+  The agreed design lives in `docs/design-notes.md`. The new code is the `ft_assistant/` package.
+  - **Tests:** `~/.local/share/voice-dictation/venv/bin/python -m unittest discover -s tests -t .`
+  - **Try the dev build next to the live tool:** `./run-dev.sh` (reuses the live venv and model
+    read-only; own settings/log in `~/.config/ft-assistant-dev/`; its Assistant key there is
+    Caps Lock, so it doesn't clash with the live tool's mouse button 12). Tell the user before
+    starting it (Caps Lock stops typing capitals while it runs) and stop it after testing. Update it as decisions are made, and don't build
   anything from it until the user says the design is ready.
   When the user says they're satisfied, merge `next` into `main`, then deploy. Not before.
 - `deploy.sh --yes` refuses unless the checkout is on `main` with no uncommitted changes.
