@@ -25,6 +25,7 @@ import numpy as np  # noqa: E402
 from faster_whisper import WhisperModel  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ft_assistant import config  # noqa: E402
 from ft_assistant.textproc import build_hotwords  # noqa: E402
 
 MODEL = os.environ.get("FT_ASSISTANT_MODEL", "large-v3-turbo")
@@ -41,7 +42,7 @@ def load_vocab():
             words = [w.strip() for w in f if w.strip() and not w.startswith("#")]
     except OSError:
         words = []
-    return build_hotwords(words)
+    return build_hotwords(words, config.load().keyword)      # re-read: setup may change it
 
 
 model = WhisperModel(MODEL, device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8",

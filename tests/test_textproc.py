@@ -1,6 +1,7 @@
 import unittest
 
-from ft_assistant.textproc import Command, build_hotwords, clean_text, parse_command, route
+from ft_assistant.textproc import (Command, build_hotwords, check_keyword, clean_text,
+                                   parse_command, route)
 
 
 class CleanText(unittest.TestCase):
@@ -69,11 +70,36 @@ class DictationOnly(unittest.TestCase):
         self.assertEqual(route("Hello there.", dictation_only=True), Command("dictate", "Hello there."))
 
 
+class CommandWord(unittest.TestCase):
+    def test_custom_word(self):
+        self.assertEqual(parse_command("Jarvis, open the browser.", "Jarvis"),
+                         Command("assistant", "open the browser."))
+        self.assertEqual(parse_command("jarvis setup", "Jarvis"), Command("setup"))
+        # With a custom word, "Assistant" is ordinary text.
+        self.assertEqual(parse_command("Assistant, hello.", "Jarvis"),
+                         Command("dictate", "Assistant, hello."))
+        self.assertEqual(route("Jarvis, hello.", dictation_only=True, keyword="Jarvis"),
+                         Command("dictate", "Jarvis, hello."))
+        self.assertEqual(parse_command("Über, start", "über"), Command("assistant", "start"))
+
+    def test_check_keyword(self):
+        self.assertEqual(check_keyword("jarvis"), ("Jarvis", None, None))
+        self.assertEqual(check_keyword(" Computer. "), ("Computer", None, None))
+        for bad in ("", "two words", "R2D2", "x", "a" * 21, "hey!there"):
+            word, error, _ = check_keyword(bad)
+            self.assertIsNone(word, bad)
+            self.assertTrue(error, bad)
+        word, error, warning = check_keyword("okay")
+        self.assertEqual((word, error), ("Okay", None))
+        self.assertTrue(warning)
+
+
 class Hotwords(unittest.TestCase):
     def test_keyword_hints_always_first(self):
         self.assertEqual(build_hotwords([]), "Assistant, Assistant setup")
         self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
                          "Assistant, Assistant setup, Discord, Claude")
+        self.assertEqual(build_hotwords(["Claude"], "Jarvis"), "Jarvis, Jarvis setup, Claude")
 
 
 if __name__ == "__main__":

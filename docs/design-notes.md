@@ -125,21 +125,24 @@ Requested by the user to be built before the first release. Documented only; no 
 - Tested by the user with the dev build: "Assistant, hello there" was typed, "Assistant setup"
   opened the screen with Dictation only selected, Save closed without questions.
 
-### Choosing the keyword
+### Choosing the command word (built 2026-11-18, for 0.2.0)
 
-- Next to the Assistant key setting, let the user **change the spoken keyword** ("Assistant") to
-  any word they like. The user called it a "wake word"; a clearer name is needed. Candidates:
-  **"command word"** (recommended: it's the word that turns dictation into a command, and doesn't
-  clash with the "Assistant key"), "trigger word", "keyword".
-- Wherever the keyword appears, the chosen word is used instead:
-  - routing ("<word>, request"), and "<word> setup" for the setup screen;
-  - the Whisper hint words (`KEYWORD_HINTS` in `textproc.py`), which keep the word from being dropped;
-  - the setup screen's reminder line and the README's examples.
-- To settle when building: allowed words (one word? letters only?), a warning for common words that
-  start ordinary sentences ("the", "so", "okay") or that Whisper may misspell, and whether the
-  "Assistant key" keeps that name when the word changes.
-- Test like the original: synthetic speech through both models to check the chosen word survives
-  (the hint-word test in phase 5 is the template).
+- Named **"command word"** (the user called it a wake word): the word that turns dictation into a
+  command. The key keeps its name, "Assistant key". Default: "Assistant". Stored as `"keyword"`.
+- A **"Command word" field** on the setup screen, under the Assistant key. Rules
+  (`textproc.check_keyword`): one word, letters only (accented letters allowed), 2-20 letters,
+  first letter capitalized. Words that often start sentences ("okay", "so", "the", ...) get a
+  warning but are allowed.
+- Everything follows the word: "<word>, request", "<word> setup", the setup screen's reopen line,
+  privacy note and explanation, the notifications, and the Whisper hint words
+  ("<word>, <word> setup" before the vocabulary; the worker re-reads it for every dictation).
+  With another word, "Assistant" is ordinary text. In Dictation only, just "<word> setup" counts.
+- **Speech test** (synthetic phrases, 12 per word, both models, with/without hints): Jarvis
+  12/11 vs 10/9, Computer 11/12 vs 12/12, Atlas 11/12 vs 10/11, Nova 10/9 vs 6/10. Hints help
+  most words; some words are simply harder. The setup screen suggests trying the word after saving.
+- Tested by the user with the dev build: changed to "Computer"; "Computer, say hello" went to
+  Claude Code; "Assistant, hello there" was typed; "Computer setup" opened the screen.
+- Later idea: a "Try it" button that listens once and shows whether the word was caught.
 
 ## Feature: distribution as one small setup script
 

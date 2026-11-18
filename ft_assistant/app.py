@@ -122,7 +122,7 @@ class App:
         t = time.time()
         raw = self.engine.transcribe(audio)
         text = textproc.clean_text(raw)
-        cmd = textproc.route(text, self.settings.dictation_only)
+        cmd = textproc.route(text, self.settings.dictation_only, self.settings.keyword)
         log.debug("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
         if self.caps_trigger:
             plat.caps_lock_off()
@@ -151,7 +151,7 @@ class App:
         self.settings = config.load()          # pick up changes made in the setup screen
         if not self.settings.uses_assistant:
             plat.notify("No assistant chosen yet. Hold the Assistant key and say "
-                        "\"Assistant setup\".")
+                        f"\"{self.settings.keyword} setup\".")
             return
         key = self.settings.harness
         # One ongoing conversation: if its window is still open, bring it forward and send there.
@@ -221,7 +221,7 @@ class App:
                         log.debug("update available: %s", rel.version)
                         plat.notify_with_action(
                             f"FT Assistant {rel.version} is available. Click to see what's new, "
-                            "or say \"Assistant setup\".", "Show", self.open_setup)
+                            f"or say \"{self.settings.keyword} setup\".", "Show", self.open_setup)
             except Exception:
                 log.exception("update check failed")
             time.sleep(tick)

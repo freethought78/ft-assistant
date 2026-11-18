@@ -56,6 +56,7 @@ def sessions_dir():
 class Settings:
     harness: str = ""        # "none" (Dictation only) | "claude" | "opencode" | "" (not chosen yet)
     trigger: dict = field(default_factory=lambda: dict(DEFAULT_TRIGGER))
+    keyword: str = "Assistant"     # the command word: "<keyword>, request" / "<keyword> setup"
 
     @property
     def harness_chosen(self):
@@ -90,6 +91,10 @@ def load():
             or (trig.get("type") == "button" and isinstance(trig.get("button"), int)
                 and trig["button"] not in (1, 2, 3, 4, 5, 6, 7))):
         s.trigger = {k: trig[k] for k in ("type", "keysym", "button") if k in trig}
+    from .textproc import check_keyword
+    word, error, _ = check_keyword(data.get("keyword", ""))
+    if word and not error:
+        s.keyword = word
     return s
 
 

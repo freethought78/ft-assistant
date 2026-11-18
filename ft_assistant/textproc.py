@@ -1,11 +1,22 @@
-"""Pure text handling: cleaning Whisper output and recognising the "Assistant" keyword.
+"""Pure text handling: cleaning Whisper output and recognising the command word
+("Assistant" unless the user picked another).
 
 No I/O here, so everything in this module is unit-tested."""
 
 import re
 from dataclasses import dataclass
 
-KEYWORD = "assistant"
+DEFAULT_KEYWORD = "Assistant"
+
+# Words that often start ordinary sentences: as a command word they'd turn normal dictation into
+# commands by accident, so choosing one shows a warning (it's still allowed).
+COMMON_STARTERS = {
+    "a", "about", "also", "an", "and", "are", "as", "at", "but", "can", "could", "did", "do",
+    "does", "for", "hello", "hey", "hi", "how", "i", "if", "in", "is", "it", "just", "let",
+    "lets", "my", "no", "now", "of", "oh", "ok", "okay", "on", "please", "right", "so", "sure",
+    "that", "the", "then", "there", "this", "to", "uh", "um", "we", "well", "what", "when",
+    "where", "why", "will", "with", "would", "yeah", "yes", "you",
+}
 
 # Phrases Whisper tends to invent on silence/noise; dropped if they are the whole result.
 HALLUCINATIONS = {"thank you.", "thank you", "thanks for watching!", "thanks for watching.",
@@ -20,7 +31,7 @@ CREDIT_RE = re.compile(
     r"|Transcription|Transcribed)\b(?: [\w.'-]+){0,4}? by\b.{0,80}$")
 
 # A word followed by any punctuation Whisper may attach ("Assistant," "Assistant." "Assistant:")
-_FIRST_WORD_RE = re.compile(r"^\s*([A-Za-z]+)(?=$|[\s,.:;!?\-])[\s,.:;!?\-]*(.*)$", re.S)
+_FIRST_WORD_RE = re.compile(r"^\s*([^\W\d_]+)(?=$|[\s,.:;!?\-])[\s,.:;!?\-]*(.*)$", re.S)
 
 
 def clean_text(text):
@@ -49,21 +60,40 @@ def _strip_leading_punct(s):
     return re.sub(r"^[\s,.:;!?\-]+", "", s).strip()
 
 
-def route(text, dictation_only=False):
+def check_keyword(word):
+    """Validate a command word chosen in setup.
+
+    Returns (word, error, warning): the word tidied (first letter capitalized), an error message
+    if it can't be used (then word is None), and a warning if it's allowed but risky."""
+    w = (word or "").strip().strip(",.:;!?\"'")
+    if not w:
+        return None, "Type a word.", None
+    if not re.fullmatch(r"[^\W\d_]+", w):
+        return None, "Use a single word made of letters only (no spaces, numbers or symbols).", None
+    if not 2 <= len(w) <= 20:
+        return None, "Use a word of 2 to 20 letters.", None
+    w = w[0].upper() + w[1:]
+    if w.casefold() in COMMON_STARTERS:
+        return w, None, (f"\"{w}\" often starts ordinary sentences, so normal dictation that "
+                         "begins with it would be treated as a command.")
+    return w, None, None
+
+
+def route(text, dictation_only=False, keyword=DEFAULT_KEYWORD):
     """What to do with cleaned dictation text. In "Dictation only" there's no assistant, so the
-    keyword means nothing: "Assistant, ..." is typed like anything else. "Assistant setup" still
-    opens the setup screen (otherwise there'd be no spoken way back to it)."""
-    cmd = parse_command(text)
+    command word means nothing: "Assistant, ..." is typed like anything else. "Assistant setup"
+    still opens the setup screen (otherwise there'd be no spoken way back to it)."""
+    cmd = parse_command(text, keyword)
     if dictation_only and cmd.kind == "assistant":
         return Command("dictate", (text or "").strip())
     return cmd
 
 
-def parse_command(text):
-    """Classify cleaned dictation text. Only the very first word can be the keyword."""
+def parse_command(text, keyword=DEFAULT_KEYWORD):
+    """Classify cleaned dictation text. Only the very first word can be the command word."""
     text = (text or "").strip()
     m = _FIRST_WORD_RE.match(text)
-    if not m or m.group(1).lower() != KEYWORD:
+    if not m or m.group(1).casefold() != (keyword or DEFAULT_KEYWORD).casefold():
         return Command("dictate", text)
     rest = _strip_leading_punct(m.group(2))
     # "Assistant setup" / "Assistant, set up." / "Assistant set-up" (Whisper varies the spelling)
@@ -72,16 +102,19 @@ def parse_command(text):
     return Command("assistant", rest)
 
 
-# Always given to Whisper as hint words: without them it sometimes drops a leading "Assistant"
-# (tested 2026-11-18: 13/14 -> 14/14 on both large-v3-turbo and small.en). A list works better
-# than the single word.
-KEYWORD_HINTS = ("Assistant", "Assistant setup")
+# The command word is always given to Whisper as hint words, "<word>, <word> setup": without them
+# it sometimes drops a leading "Assistant" (tested 2026-11-18: 13/14 -> 14/14 on both
+# large-v3-turbo and small.en). A list works better than the single word.
+def keyword_hints(keyword=DEFAULT_KEYWORD):
+    k = keyword or DEFAULT_KEYWORD
+    return (k, f"{k} setup")
 
 
-def build_hotwords(vocabulary_words):
-    """Whisper hotwords: the keyword hints first, then the user's vocabulary (no duplicates)."""
+def build_hotwords(vocabulary_words, keyword=DEFAULT_KEYWORD):
+    """Whisper hotwords: the command-word hints first, then the user's vocabulary (no
+    duplicates)."""
     seen, out = set(), []
-    for w in list(KEYWORD_HINTS) + [v.strip() for v in vocabulary_words]:
+    for w in list(keyword_hints(keyword)) + [v.strip() for v in vocabulary_words]:
         if w and w.lower() not in seen:
             seen.add(w.lower())
             out.append(w)

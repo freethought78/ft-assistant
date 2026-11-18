@@ -14,7 +14,7 @@ import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from . import __version__, config, harness, keys, updater
+from . import __version__, config, harness, keys, textproc, updater
 from . import plat
 
 CHANGED = 10
@@ -36,7 +36,7 @@ INSTALL_SIZES = {"claude": "about 350 MB", "opencode": "about 400 MB"}
 PRIVACY_NOTE_DICTATION_ONLY = ("Everything stays on this computer: nothing you say is sent "
                                "anywhere.")
 PRIVACY_NOTE = ("Normal dictation never leaves this computer. Requests that start with "
-                "\"Assistant\" are sent to the assistant's online AI service (Anthropic for "
+                "\"{word}\" are sent to the assistant's online AI service (Anthropic for "
                 "Claude Code, OpenCode's model provider for OpenCode).")
 
 
@@ -125,7 +125,7 @@ def installed_dir():
 class SetupWindow:
     def __init__(self, root, settings, first_run):
         self.root = root
-        self.original = config.Settings(settings.harness, dict(settings.trigger))
+        self.original = config.Settings(settings.harness, dict(settings.trigger), settings.keyword)
         self.trigger = dict(settings.trigger)
         self.first_run = first_run
         self.capture_q = queue.Queue()
@@ -172,7 +172,8 @@ class SetupWindow:
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
-        self.privacy = ttk.Label(f, text=PRIVACY_NOTE, wraplength=520, style="Note.TLabel")
+        self.privacy = ttk.Label(f, text=PRIVACY_NOTE.format(word=settings.keyword), wraplength=520,
+                                 style="Note.TLabel")
         self.privacy.grid(row=r, sticky="w", pady=(4, 14))
         r += 1
 
@@ -196,6 +197,22 @@ class SetupWindow:
         ttk.Label(f, text="Best avoided: " + keys.BEST_AVOIDED, wraplength=520,
                   style="Note.TLabel").grid(row=r, sticky="w", pady=(2, 14))
         r += 1
+
+        # ---- command word
+        ttk.Label(f, text="Command word", style="Head.TLabel").grid(row=r, sticky="w")
+        r += 1
+        wrow = ttk.Frame(f)
+        wrow.grid(row=r, sticky="we")
+        self.word_var = tk.StringVar(value=settings.keyword)
+        tk.Entry(wrow, textvariable=self.word_var, width=22, bg=BUTTON, fg=FG,
+                 insertbackground=FG, relief="flat", highlightthickness=1,
+                 highlightbackground=BORDER, highlightcolor=ACCENT,
+                 font=(pick_font_family(root), BASE_PX)).grid(row=0, column=0, sticky="w", ipady=3)
+        r += 1
+        self.word_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
+        self.word_msg.grid(row=r, sticky="w", pady=(4, 14))
+        r += 1
+        self.word_var.trace_add("write", lambda *a: self._refresh())
 
         # ---- updates / uninstall
         ttk.Label(f, text="Updates and uninstall", style="Head.TLabel").grid(row=r, sticky="w")
@@ -241,8 +258,21 @@ class SetupWindow:
 
     def _refresh(self):
         name = keys.display_name(self.trigger)
+        word, error, warning = textproc.check_keyword(self.word_var.get())
+        shown = word or self.original.keyword
         self.hint.configure(text=f"To open this screen again, hold {name} and say "
-                                 "\"Assistant setup\".")
+                                 f"\"{shown} setup\".")
+        if error:
+            self.word_msg.configure(text=error, style="Warn.TLabel")
+        elif warning:
+            self.word_msg.configure(text=warning + " It's allowed, but a rarer word works better.",
+                                    style="Warn.TLabel")
+        else:
+            self.word_msg.configure(
+                text=f"Start a dictation with \"{word}\" to send it to your assistant, or say "
+                     f"\"{word} setup\" to open this screen. After saving, try it a few times: "
+                     "some words are easier for the speech engine to catch than others.",
+                style="Note.TLabel")
         self.key_label.configure(text=f"Current Assistant key: {name}")
         for key, h in harness.HARNESSES.items():
             installed = harness.find_exe(h) is not None
@@ -253,7 +283,7 @@ class SetupWindow:
                 self.install_btn[key].grid()
         choice = self.harness_var.get()
         self.privacy.configure(text=PRIVACY_NOTE_DICTATION_ONLY if choice == config.DICTATION_ONLY
-                               else PRIVACY_NOTE)
+                               else PRIVACY_NOTE.format(word=shown))
         chosen = choice in config.CHOICES
         self.save_btn.configure(state="normal" if chosen and not self.capturing else "disabled")
 
@@ -415,7 +445,14 @@ class SetupWindow:
     # ---- closing
 
     def _save(self):
-        new = config.Settings(self.harness_var.get(), dict(self.trigger))
+        word, error, warning = textproc.check_keyword(self.word_var.get())
+        if error:
+            messagebox.showwarning("Command word", error, parent=self.root)
+            return
+        if warning and word != self.original.keyword and not messagebox.askyesno(
+                "Use this command word?", warning + "\n\nUse it anyway?", parent=self.root):
+            return
+        new = config.Settings(self.harness_var.get(), dict(self.trigger), word)
         if new.harness not in config.CHOICES:
             return
         # Dictation only needs no assistant, so there's nothing to check or ask about.

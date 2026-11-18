@@ -127,6 +127,13 @@ class Settings(unittest.TestCase):
         self.assertTrue(config.Settings(harness="claude").uses_assistant)
         self.assertFalse(config.Settings(harness="").harness_chosen)
 
+    def test_keyword(self):
+        self.assertEqual(config.load().keyword, "Assistant")
+        config.save(config.Settings(harness="claude", keyword="Jarvis"))
+        self.assertEqual(config.load().keyword, "Jarvis")
+        Path(self.tmp.name, "settings.json").write_text(json.dumps({"keyword": "two words"}))
+        self.assertEqual(config.load().keyword, "Assistant")
+
     def test_bad_values_fall_back(self):
         Path(self.tmp.name, "settings.json").write_text(json.dumps(
             {"harness": "gemini", "trigger": {"type": "button", "button": 1}}))

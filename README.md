@@ -53,6 +53,9 @@ password.
 
 ## Using it
 
+"Assistant" is the default **command word**; you can pick another one, or choose
+**Dictation only** (no assistant, nothing leaves your computer), on the setup screen.
+
 | You say (holding the Assistant key) | What happens |
 |---|---|
 | Anything | It's typed into the window you're using. |
