@@ -149,10 +149,18 @@ Code reading of OpenCode desktop 1.19.6:
     The user must go through them once; setup should tell new users to expect this.
   - **Auto mode is now Claude Code's default permission mode:** it handles low-risk actions
     itself and only asks about risky ones, which keeps permission prompts rare.
-  - Launch it with a clean environment: started from inside another Claude session it inherited
-    a "child session" marker and turned off transcript saving.
-  - Still to check: what the terminal title shows (for "already in Claude" detection).
+  - **Launch it with a clean environment** (drop inherited `CLAUDE*`/`ANTHROPIC*` variables):
+    started from inside another Claude session it inherited a "child session" marker that turned
+    off transcript saving and terminal titles. With a clean environment both work (verified).
+  - **Terminal title:** Claude Code sets it to `✳ <short conversation name>` (seen when idle;
+    the first character may change while it's working, not verified). OpenCode's is
+    `OC | <session title>`.
 - **Typing into an already-open conversation:** plain typing works in terminals today.
+- **Knowing you're "already in" a harness** (routing rule 5): the tool remembers the terminal
+  windows it opened itself (exact); for harness terminals the user opened by hand it falls back
+  to the title patterns above. Implementation detail, no user decision needed.
+- **Starting when nothing is running:** not an issue with CLIs; each "Assistant" command starts
+  a fresh process in a new terminal window (the earlier desktop-app concern no longer applies).
 - **The Windows side:** needs a Windows machine.
 
 ## Feature: distribution as one small setup script
