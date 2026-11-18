@@ -22,7 +22,7 @@ Live install layout:
 | `whisper_worker.py` | Speech engine subprocess: faster-whisper `large-v3-turbo`, CUDA float16, English, beam 5, VAD filter, `hotwords` from `vocabulary.txt`. Protocol on stdin/stdout: prints `READY`, then per request reads a 4-byte LE length + float32 16 kHz mono audio and replies with one JSON line `{"text": ...}` or `{"error": ...}`. |
 | `run.sh` | Launcher: sets `LD_LIBRARY_PATH` to the venv's nvidia cublas/cudnn libs, `HF_HUB_OFFLINE=1`, runs `dictate.py` with the venv's Python. |
 | `vocabulary.txt` | Words/names Whisper should spell a certain way, one per line (`#` comments). Read on every transcription, so edits apply without a restart. |
-| `dictation.log` | Log (engine load times, each transcript with audio length and transcription time, errors). |
+| `dictation.log` | Log of events only: engine load/unload, mic open/close, audio length, transcription time and character count per dictation, errors. **Never the transcribed text.** |
 | `venv/` | Python 3.12 venv: faster-whisper 1.2.1, ctranslate2 4.9, numpy, sounddevice, python-xlib, nvidia libs. |
 | `models/` | Downloaded HF cache for `mobiuslabsgmbh/faster-whisper-large-v3-turbo`. |
 
@@ -57,7 +57,7 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
   unload, because the roughly 1 s cold start is fine. Killing the subprocess is what guarantees GPU memory is returned.
 - **Never mute, disable or reconfigure the system microphone.** Releasing only closes the tool's own input stream.
   The user specifically asked about this, so say "closes its mic stream", never "turns off the mic".
-- **Privacy:** audio is kept only in memory and never written to disk. The model runs offline (`HF_HUB_OFFLINE=1`).
+- **Privacy:** audio is kept only in memory and never written to disk, and transcript text is never logged. The model runs offline (`HF_HUB_OFFLINE=1`).
 - **It works with background audio playing** (tested), and short taps or near-silent clips are ignored (`MIN_SEC`, `MIN_RMS`).
 - Whisper's typical made-up phrases on silence ("Thank you.", "Thanks for watching!") are dropped when they are the whole result (`HALLUCINATIONS`).
 - A start beep (880 Hz) means the mic is live, and a stop beep (587 Hz) means release was registered.
@@ -66,9 +66,11 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
 
 - **Restarting the tool cuts off the user's typing** until it's back, and they may be dictating to you through it.
   Say so before restarting, keep the downtime short, and confirm it's back (`ready:` line in `dictation.log`).
-  Restart: `pkill -f voice-dictation/dictate.py; setsid ~/.local/share/voice-dictation/run.sh >/dev/null 2>&1 &`
+  Restart: `pkill -f '[v]oice-dictation/dictate.py'; sleep 1; setsid ~/.local/share/voice-dictation/run.sh >/dev/null 2>&1 < /dev/null &`
+  (the `[v]` stops `pkill` from matching, and killing, the shell running the command itself).
 - Test changes before deploying them over the working version, and keep a way to roll back.
-- `dictation.log` contains the user's transcribed speech. Read it to debug, but don't paste large chunks back or send it anywhere.
+- **Never log what the user says.** On 2026-11-17 they had transcript logging turned off and the old log deleted.
+  Don't add any log line, debug print or file that records transcript text. If debugging needs the text, ask first and remove it afterwards.
 
 ## Working with the user
 

@@ -11,6 +11,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -38,6 +39,13 @@ LOG_FILE = os.path.join(HOME, "dictation.log")
 # Phrases Whisper tends to invent on silence/noise; dropped if they are the whole result.
 HALLUCINATIONS = {"thank you.", "thank you", "thanks for watching!", "thanks for watching.",
                   "you", "you.", "bye.", "bye!", "thank you very much.", ".", "okay."}
+# Subtitle credits Whisper tacks onto the end of real speech (learned from video subtitles),
+# e.g. "Closed Captioning by www.microsoft.com", "Subtitles by the Amara.org community".
+# Only removed at the very end, and only when the credit word is capitalized, so a sentence
+# like "the subtitles by default are off" is left alone.
+CREDIT_RE = re.compile(
+    r"[\s,]*\b(?:Closed [Cc]aption(?:ing|ed|s)?|Caption(?:ing|ed|s)?|Subtitles?|Subtitling"
+    r"|Transcription|Transcribed)\b(?: [\w.'-]+){0,4}? by\b.{0,80}$")
 # ------------------------------------------
 
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
@@ -203,6 +211,17 @@ class Engine:
             log.info("engine unloaded")
 
 
+def clean_text(text):
+    """Drop subtitle credits from the end; return "" if nothing real is left."""
+    prev = None
+    while text and text != prev:
+        prev = text
+        text = CREDIT_RE.sub("", text).strip()
+    if text.lower() in HALLUCINATIONS:
+        return ""
+    return text
+
+
 def type_text(text):
     subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "4", "--", text])
 
@@ -226,9 +245,12 @@ def main():
                     continue
                 t = time.time()
                 text = engine.transcribe(audio)
-                log.info("%.1fs audio -> %.2fs: %r", dur, time.time() - t, text)
-                if text and text.lower() not in HALLUCINATIONS:
-                    type_text(text + " ")
+                cleaned = clean_text(text)
+                # The user's words are never logged, only sizes and timings.
+                log.info("%.1fs audio -> %.2fs, %d chars%s", dur, time.time() - t, len(cleaned),
+                         " (filtered %d chars)" % (len(text) - len(cleaned)) if cleaned != text else "")
+                if cleaned:
+                    type_text(cleaned + " ")
             except Exception as e:
                 log.exception("transcription failed")
                 notify(f"Error: {e}")
