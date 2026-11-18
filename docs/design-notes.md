@@ -14,6 +14,10 @@ Last updated: 2026-11-17 (full review and cleanup)
   is opened and closed.
 - **Privacy:** audio stays in memory only, never on disk. The Whisper model runs offline.
   **Transcribed text is never logged.**
+- **Errors-only log** (decided 2026-11-18, ships in 0.2.0): the log file holds only errors,
+  warnings and one start-up line. No activity is recorded (not when, how long or how often anyone
+  dictates). Activity lines exist at debug level for development and are never written. The file
+  is capped at 200 KB (one old copy kept). `tests/test_logging_policy.py` enforces this.
 - **Filters:** short taps and near-silent clips are ignored; Whisper's made-up phrases on silence
   ("Thank you.") and trailing subtitle credits ("Closed Captioning by …") are removed.
 - **Beeps:** a start beep when the mic is live, a stop beep when release is registered.

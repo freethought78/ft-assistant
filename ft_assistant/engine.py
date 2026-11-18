@@ -40,7 +40,7 @@ class Engine:
             if line.strip() != b"READY":
                 self.stop()
                 raise RuntimeError("speech engine failed to start (see the log)")
-            log.info("engine loaded in %.1fs", time.time() - t)
+            log.debug("engine loaded in %.1fs", time.time() - t)
 
     def warm(self):
         """Start loading in the background (called on key press)."""
@@ -83,4 +83,4 @@ class Engine:
             except Exception:
                 p.kill()
                 p.wait()
-            log.info("engine unloaded")
+            log.debug("engine unloaded")

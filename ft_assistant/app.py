@@ -8,6 +8,7 @@
 What the user says is never written to the log; only sizes and timings are."""
 
 import logging
+import logging.handlers
 import os
 import queue
 import subprocess
@@ -34,8 +35,15 @@ def setup_logging():
     d = config.config_dir()
     d.mkdir(parents=True, exist_ok=True)
     log_file = d / "ft-assistant.log"
-    logging.basicConfig(filename=log_file, level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    # Errors and warnings only, plus one start-up line: no record of when or how much anyone
+    # dictates (user decision, 2026-11-18). What was said is never logged at any level.
+    # Activity lines exist at debug level for development and are never written to the file.
+    handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=200_000, backupCount=1,
+                                                   encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
     return log_file
 
 
@@ -109,13 +117,13 @@ class App:
         dur = len(audio) / SAMPLE_RATE
         rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
         if dur < MIN_SEC or rms < MIN_RMS:
-            log.info("skipped (dur=%.2fs rms=%.4f)", dur, rms)
+            log.debug("skipped (dur=%.2fs rms=%.4f)", dur, rms)
             return
         t = time.time()
         raw = self.engine.transcribe(audio)
         text = textproc.clean_text(raw)
         cmd = textproc.parse_command(text)
-        log.info("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
+        log.debug("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
         if self.caps_trigger:
             plat.caps_lock_off()
         if cmd.kind == "dictate":
@@ -152,11 +160,11 @@ class App:
             if text:
                 plat.type_text(text)
                 plat.press_enter()
-            log.info("sent to the open %s window", key)
+            log.debug("sent to the open %s window", key)
             return
         before = plat.terminal_windows()
         h = harness.open_session(key, text)
-        log.info("opened %s window", h.key)
+        log.debug("opened %s window", h.key)
         threading.Thread(target=self._remember_new_window, args=(key, before), daemon=True).start()
 
     def _remember_new_window(self, key, before):
@@ -187,7 +195,7 @@ class App:
         self.setup_proc = None
         if code == SETUP_CHANGED and self.settings.trigger != old_trigger and self.listener:
             # Switch keys in place: stop watching the old key; main() starts the new one.
-            log.info("Assistant key changed; switching to it")
+            log.debug("Assistant key changed; switching to it")
             self.listener.stop()
 
     # ---- update check (background thread)
@@ -210,7 +218,7 @@ class App:
                     if updater.should_notify(rel, state):
                         updater.mark_notified(state, rel.version)
                         updater.save_state(state)
-                        log.info("update available: %s", rel.version)
+                        log.debug("update available: %s", rel.version)
                         plat.notify_with_action(
                             f"FT Assistant {rel.version} is available. Click to see what's new, "
                             "or say \"Assistant setup\".", "Show", self.open_setup)
@@ -255,4 +263,4 @@ def main():
         app.listener = plat.TriggerListener(trig, app.on_press, app.on_release)
         app.listener.run()          # blocks until the key changes
         trig = app.settings.trigger
-        log.info("ready: Assistant key %s", trig.get("keysym") or f"mouse button {trig.get('button')}")
+        log.debug("ready: Assistant key %s", trig.get("keysym") or f"mouse button {trig.get('button')}")

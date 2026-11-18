@@ -52,7 +52,7 @@ class Recorder:
         self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                                      blocksize=512, callback=self._cb)
         self.stream.start()
-        log.info("mic stream opened")
+        log.debug("mic stream opened")
 
     def close(self):
         if self.stream is not None:
@@ -62,7 +62,7 @@ class Recorder:
             except Exception:
                 pass
             self.stream = None
-            log.info("mic stream closed")
+            log.debug("mic stream closed")
 
     def _cb(self, data, frames, t, status):
         chunk = data[:, 0].copy()
