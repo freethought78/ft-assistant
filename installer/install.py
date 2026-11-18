@@ -145,7 +145,10 @@ def _latest_release_zip():
 
 
 def fetch_app(install_dir, source=None):
-    """Put the ft_assistant package into <dir>/app/ft_assistant. Returns the source label."""
+    """Put the ft_assistant package into <dir>/app/ft_assistant. Returns the source label.
+
+    The release's own installer (installer/install.py) is saved next to it as install.py.new,
+    so an update can hand over to the newer installer."""
     source = source or os.environ.get("FT_ASSISTANT_SOURCE")
     app = Path(install_dir) / "app"
     new = Path(install_dir) / "app.new"
@@ -156,6 +159,8 @@ def fetch_app(install_dir, source=None):
         pkg = src / "ft_assistant" if (src / "ft_assistant").is_dir() else src
         shutil.copytree(pkg, new / "ft_assistant",
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        if (src / "installer" / "install.py").is_file():
+            shutil.copyfile(src / "installer" / "install.py", Path(install_dir) / "install.py.new")
         label = str(src)
     else:
         if source and (source.startswith("http") or Path(source).is_file()):
@@ -178,6 +183,9 @@ def fetch_app(install_dir, source=None):
                 dest = new / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(z.read(n))
+            inst = [n for n in z.namelist() if ("/" + n).endswith("/installer/install.py")]
+            if inst:
+                (Path(install_dir) / "install.py.new").write_bytes(z.read(inst[0]))
     # swap in, keeping the previous version for rollback
     prev = Path(install_dir) / "app.previous"
     if app.exists():
@@ -488,6 +496,16 @@ def cmd_install(a):
         say("It's starting now. The setup window opens so you can choose your assistant.")
 
 
+def _rollback(d):
+    """Put the previous program (and installer) back after a failed update."""
+    prev = d / "app.previous"
+    if prev.exists():
+        shutil.rmtree(d / "app", ignore_errors=True)
+        prev.rename(d / "app")
+    if (d / "install.py.previous").exists():
+        os.replace(d / "install.py.previous", d / "install.py")
+
+
 def cmd_update(a):
     d = Path(a.dir).expanduser().resolve()
     info = load_manifest(d)
@@ -495,25 +513,49 @@ def cmd_update(a):
     try:
         step(1, "Downloading the new version", total=2)
         label = fetch_app(d, a.source)
+    except Exception as e:
+        say(f"Update failed ({e}); nothing was changed.")
+        start_app(write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
+                                  info.get("gpu_libs", "pip")))
+        raise SystemExit(1)
+    info["source"] = label
+    save_manifest(d, info)
+    new_installer = d / "install.py.new"
+    if new_installer.exists():
+        # Hand over to the release's own installer, so its newer logic does the rest.
+        shutil.copyfile(d / "install.py", d / "install.py.previous")
+        os.replace(new_installer, d / "install.py")
+        rc = subprocess.run([str(python_exe(d)), str(d / "install.py"), "finish-update",
+                             "--dir", str(d)] + (["--no-start"] if a.no_start else []),
+                            env=dict(os.environ, PYTHONNOUSERSITE="1")).returncode
+        raise SystemExit(rc)
+    finish_update(d, a.no_start)
+
+
+def finish_update(d, no_start=False):
+    """Second half of an update, run by the new installer: packages, launchers, restart."""
+    info = load_manifest(d)
+    try:
         step(2, "Updating the speech engine (only what changed is downloaded)", total=2)
         install_packages(d, info.get("gpu", False), info.get("gpu_libs", "pip"))
     except Exception as e:
-        prev = d / "app.previous"
-        if prev.exists():
-            shutil.rmtree(d / "app", ignore_errors=True)
-            prev.rename(d / "app")
+        _rollback(d)
         say(f"Update failed ({e}); the previous version was put back.")
         start_app(write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
-                                     info.get("gpu_libs", "pip")))
+                                  info.get("gpu_libs", "pip")))
         raise SystemExit(1)
-    info["source"] = label
     info["updated"] = time.strftime("%Y-%m-%d %H:%M")
     save_manifest(d, info)
     launchers = write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
-                                     info.get("gpu_libs", "pip"))
-    if not a.no_start:
+                                info.get("gpu_libs", "pip"))
+    register_windows_app(d, launchers, app_version(d))
+    if not no_start:
         start_app(launchers)
     say("Updated. The previous version is kept in app.previous for rollback.")
+
+
+def cmd_finish_update(a):
+    finish_update(Path(a.dir).expanduser().resolve(), a.no_start)
 
 
 def cmd_uninstall(a):
@@ -568,16 +610,20 @@ def main(argv=None):
     u.add_argument("--dir", required=True)
     u.add_argument("--source")
     u.add_argument("--no-start", action="store_true")
+    f = sub.add_parser("finish-update")
+    f.add_argument("--dir", required=True)
+    f.add_argument("--no-start", action="store_true")
     x = sub.add_parser("uninstall")
     x.add_argument("--dir", required=True)
     x.add_argument("--keep-settings", action="store_true")
     x.add_argument("--yes", action="store_true")
-    for sp in (i, u, x):
+    for sp in (i, u, f, x):
         sp.add_argument("--pause", action="store_true",
                         help="wait for Enter at the end (when run in its own window)")
     a = p.parse_args(argv)
     try:
-        {"install": cmd_install, "update": cmd_update, "uninstall": cmd_uninstall}[a.command](a)
+        {"install": cmd_install, "update": cmd_update, "finish-update": cmd_finish_update,
+         "uninstall": cmd_uninstall}[a.command](a)
     finally:
         if a.pause:
             input("\nPress Enter to close this window. ")

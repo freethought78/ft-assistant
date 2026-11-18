@@ -48,6 +48,49 @@ class Installer(unittest.TestCase):
         self.assertEqual((self.dir / "app" / "ft_assistant" / "__init__.py").read_text(), "v = 1\n")
         self.assertFalse((self.dir / "app" / "README.md").exists())
 
+    def test_fetch_app_keeps_the_release_installer(self):
+        inst.fetch_app(self.dir, str(REPO))
+        self.assertEqual((self.dir / "install.py.new").read_text(),
+                         (REPO / "installer" / "install.py").read_text())
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("x-ft-assistant-1/ft_assistant/__init__.py", "")
+            z.writestr("x-ft-assistant-1/installer/install.py", "# new installer\n")
+        zpath = Path(self.tmp.name, "rel.zip")
+        zpath.write_bytes(buf.getvalue())
+        inst.fetch_app(self.dir, str(zpath))
+        self.assertEqual((self.dir / "install.py.new").read_text(), "# new installer\n")
+
+    def test_update_hands_over_to_the_new_installer(self):
+        (self.dir / "install.py").write_text("# old installer\n")
+        inst.save_manifest(self.dir, {"gpu": False, "model": "m", "gpu_libs": "pip"})
+        calls = []
+        fake = lambda cmd, **kw: (calls.append(cmd), mock.Mock(returncode=0))[1]  # noqa: E731
+        with mock.patch.object(inst, "stop_running_app"), \
+                mock.patch.object(inst.subprocess, "run", side_effect=fake):
+            with self.assertRaises(SystemExit) as cm:
+                inst.main(["update", "--dir", str(self.dir), "--source", str(REPO), "--no-start"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertEqual((self.dir / "install.py").read_text(),
+                         (REPO / "installer" / "install.py").read_text())
+        self.assertEqual((self.dir / "install.py.previous").read_text(), "# old installer\n")
+        self.assertEqual(calls[0][1:], [str(self.dir / "install.py"), "finish-update", "--dir",
+                                        str(self.dir), "--no-start"])
+
+    def test_finish_update_rolls_back_on_failure(self):
+        (self.dir / "app" / "ft_assistant").mkdir(parents=True)
+        (self.dir / "app.previous" / "ft_assistant").mkdir(parents=True)
+        (self.dir / "app.previous" / "ft_assistant" / "old.py").write_text("old")
+        (self.dir / "install.py").write_text("new")
+        (self.dir / "install.py.previous").write_text("old")
+        inst.save_manifest(self.dir, {"gpu": False, "model": "m"})
+        with mock.patch.object(inst, "install_packages", side_effect=inst.PackagesFailed("x")), \
+                mock.patch.object(inst, "start_app"):
+            with self.assertRaises(SystemExit):
+                inst.main(["finish-update", "--dir", str(self.dir)])
+        self.assertTrue((self.dir / "app" / "ft_assistant" / "old.py").exists())
+        self.assertEqual((self.dir / "install.py").read_text(), "old")
+
     def test_launchers_and_shortcuts(self):
         launchers = inst.write_launchers(self.dir, gpu=True, model="large-v3-turbo")
         text = launchers["ft-assistant"].read_text()
