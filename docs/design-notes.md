@@ -156,6 +156,26 @@ settings for it), else on the bundled Python with the pixel-size fallback. The s
 **offers to install missing system packages** with one `sudo` command (apt, dnf, pacman or zypper;
 the user types their password): needed `xdotool`, `libnotify`, `portaudio` (setup stops if they're
 still missing) and recommended `python3-tk` (setup continues without it, plainer font).
+**Reuse before download (2026-11-18, user request: "anywhere possible, in Linux or Windows").**
+Setup and installer reuse what's already on the computer:
+- **Python:** the computer's own Python 3.9-3.13 with `venv` becomes the tool's private package
+  folder (no 70 MB download; on Linux its Tk also gives smooth fonts). `python3-venv` is offered
+  as a recommended package when only that is missing. If the speech engine has no build for that
+  Python (installer exit code 3), setup falls back to the downloaded standalone Python. Windows:
+  `py` launcher or a real `python` (not the Microsoft Store placeholder).
+- **NVIDIA libraries:** used from the system when cuBLAS 12 and cuDNN 9 are installed there
+  (Linux `ldconfig`, Windows `PATH`); otherwise pip copies.
+- **Whisper model:** found in the Hugging Face cache (`HF_HUB_CACHE`, `HF_HOME`,
+  `~/.cache/huggingface/hub`) or the earlier voice-dictation tool, and **hard-linked** (no extra
+  disk; independent of the original). Newer caches keep big files in a shared blob store outside
+  the model folder; those links are resolved to the real file.
+- **pip's shared download cache**, Claude Code / OpenCode if installed, and the system tools.
+- The size summary marks reused parts "already on this computer (reused)".
+- **After a system upgrade** breaks a reused Python, the launcher shows a "needs a repair"
+  notification; re-running setup rebuilds the package folder.
+Live-tested on Linux: reused Python 3.12.3 and the live tool's model (download estimate 3.1 GB ->
+1.45 GB), GPU transcription OK, first-run setup with smooth fonts, dictation, uninstall; the live
+tool's model was untouched.
 
 1. **Install location:** suggested, and changeable before installing. Per-user, no admin rights:
    Linux `~/.local/share/ft-assistant/`, Windows `%LOCALAPPDATA%\FT Assistant\`.

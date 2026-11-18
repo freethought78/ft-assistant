@@ -66,6 +66,76 @@ class Installer(unittest.TestCase):
         self.assertTrue(all(str(p).startswith(self.tmp.name) for p in shortcuts))
         self.assertEqual(len(inst.write_shortcuts(launchers, autostart=False)), 3)
 
+    def test_system_gpu_libs_skip_library_path_and_repair_notice(self):
+        text = inst.write_launchers(self.dir, gpu=True, model="large-v3-turbo",
+                                    gpu_libs="system")["ft-assistant"].read_text()
+        self.assertIn('FT_ASSISTANT_DEVICE="cuda"', text)
+        self.assertNotIn("LD_LIBRARY_PATH", text)
+        self.assertIn("needs a repair", text)            # shown if a system upgrade broke Python
+        self.assertIn('PYTHONNOUSERSITE="1"', text)
+
+    def make_cached_model(self, root, name="large-v3-turbo"):
+        repo = Path(root) / f"models--mobiuslabsgmbh--faster-whisper-{name}"
+        (repo / "blobs").mkdir(parents=True)
+        (repo / "blobs" / "abc").write_bytes(b"weights")
+        snap = repo / "snapshots" / "123"
+        snap.mkdir(parents=True)
+        os.symlink("../../blobs/abc", snap / "model.bin")
+        return repo
+
+    def test_find_model(self):
+        cache = Path(self.tmp.name, "hfcache")
+        self.assertIsNone(inst.find_model("large-v3-turbo", [cache]))
+        repo = self.make_cached_model(cache)
+        self.assertEqual(inst.find_model("large-v3-turbo", [cache]), repo)
+        self.assertIsNone(inst.find_model("small.en", [cache]))
+
+    def test_model_reused_with_hard_links(self):
+        cache = Path(self.tmp.name, "hfcache")
+        repo = self.make_cached_model(cache)
+        with mock.patch.dict(os.environ, {"FT_ASSISTANT_MODEL_SOURCE": str(cache)}):
+            self.assertEqual(inst.install_model(self.dir, gpu=True), "large-v3-turbo")
+        blob = self.dir / "models" / repo.name / "blobs" / "abc"
+        link = self.dir / "models" / repo.name / "snapshots" / "123" / "model.bin"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.read_bytes(), b"weights")
+        self.assertTrue(os.path.samefile(blob, repo / "blobs" / "abc"))   # same file, no extra space
+        # Deleting the original keeps our copy working.
+        (repo / "blobs" / "abc").unlink()
+        self.assertEqual(link.read_bytes(), b"weights")
+        # Running again finds the model already in place.
+        self.assertEqual(inst.install_model(self.dir, gpu=True), "large-v3-turbo")
+
+    def test_model_in_shared_blob_store(self):
+        # Newer Hugging Face caches: the repo's blob is a symlink into a cache-wide store.
+        cache = Path(self.tmp.name, "hfcache")
+        repo = cache / "models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"
+        (cache / "blobs" / "b5").mkdir(parents=True)
+        (cache / "blobs" / "b5" / "real").write_bytes(b"big weights")
+        (repo / "blobs").mkdir(parents=True)
+        os.symlink("../../blobs/b5/real", repo / "blobs" / "e76")
+        (repo / "snapshots" / "1").mkdir(parents=True)
+        os.symlink("../../blobs/e76", repo / "snapshots" / "1" / "model.bin")
+        inst.link_tree(repo, self.dir / "models" / repo.name)
+        ours = self.dir / "models" / repo.name / "snapshots" / "1" / "model.bin"
+        self.assertEqual(ours.read_bytes(), b"big weights")
+        self.assertTrue(os.path.samefile(ours, cache / "blobs" / "b5" / "real"))
+        self.assertIsNotNone(inst.find_model("large-v3-turbo", [self.dir / "models"]))
+
+    def test_broken_model_not_found(self):
+        cache = Path(self.tmp.name, "hfcache")
+        snap = cache / "models--x--faster-whisper-small.en" / "snapshots" / "1"
+        snap.mkdir(parents=True)
+        os.symlink("../../blobs/missing", snap / "model.bin")
+        self.assertIsNone(inst.find_model("small.en", [cache]))
+
+    def test_packages_failure_exit_code(self):
+        with mock.patch.object(inst, "install_packages", side_effect=inst.PackagesFailed("no wheel")), \
+                mock.patch.object(inst, "stop_running_app"):
+            with self.assertRaises(SystemExit) as cm:
+                inst.main(["install", "--dir", str(self.dir), "--gpu", "no", "--no-start"])
+        self.assertEqual(cm.exception.code, 3)
+
     def test_uninstall_removes_everything_it_made(self):
         launchers = inst.write_launchers(self.dir, gpu=False, model="small.en")
         shortcuts = inst.write_shortcuts(launchers)
