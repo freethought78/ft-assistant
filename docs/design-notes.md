@@ -22,13 +22,16 @@ Last updated: 2026-11-17
 
    No hidden or headless agent runs, ever.
 5. **Routing depends on the focused window:**
-   - **Already typing in the chosen harness's app** → strip "Assistant" from the start and
-     type the rest into the current conversation. No new session.
+   - **Already typing in a harness app** (Claude or OpenCode, **even if it's not the chosen one**)
+     → strip "Assistant" from the start and type the rest into the current conversation.
+     No new session.
    - **Anywhere else** → open a **new session** in the chosen harness's app and enter the
      rest of the dictation as the command.
 6. **New sessions have no project folder.** Same as starting a fresh Claude Code session
    with no folder. If the user wants it to become a project, they say so in that session;
    the tool needs no special handling for that.
+   - **"Assistant" with nothing after it** → open the chosen harness's app with a new, empty
+     session, ready for the user. (If already in a harness app: nothing to type, so nothing happens.)
 7. **"Assistant setup"** opens a small configuration screen:
    - It appears automatically the **first time the software is installed**, so a harness is
      always chosen before the keyword is used.
@@ -36,12 +39,15 @@ Last updated: 2026-11-17
    - **The screen itself tells the user how to get back to it,** using the key they actually
      have, e.g. "To open this screen again, hold Caps Lock and say 'Assistant setup'."
      That key is called the **Assistant key** in the UI and docs.
+   - **Built with Tkinter:** it comes with Python (no extra download) and works the same on
+     Windows and Linux. Plain but clean look.
    - The user picks **OpenCode** (free) or **Claude Code** (with a subscription, or by preference).
    - If the chosen harness isn't installed, the screen tells the user and helps them install it.
      **Nothing is downloaded automatically** outside this screen.
    - **Reassign the Assistant key:** a button on the screen starts capture; the next key press
      or mouse button press becomes the Assistant key. Easy to change again at any time.
-     - **Any keyboard key** is allowed (Caps Lock is only the default suggestion).
+     - **Default for a new install: Caps Lock** (every keyboard has it, on both systems).
+     - **Any keyboard key** is allowed.
      - **Any extra mouse button** is allowed (side buttons, Fn buttons, etc.).
      - **Left, right and middle click are refused**, with a short message saying why.
      - **The scroll wheel is refused too** (wheel up/down and tilt left/right).
@@ -60,14 +66,7 @@ Last updated: 2026-11-17
 
 ### Open questions
 
-- **Chosen harness vs. other harness:** if Claude Code is chosen but the user says "Assistant …"
-  while typing in the OpenCode app (or the reverse), should it type into the current window or
-  open a new session in the chosen app?
-- **"Assistant" with nothing after it:** ignore it, or just open/focus the app?
-- **First install:** the tool currently has no installer. What does "installing the software"
-  look like for a new user (and is that part of this redesign)?
-- **Setup screen look and toolkit,** and where the chosen harness is saved
-  (e.g. `~/.config/…`).
+None right now. (Install itself is covered by the setup script section below.)
 
 ### To verify before building (technical, not user decisions)
 
@@ -77,6 +76,8 @@ Last updated: 2026-11-17
   installed on this machine).
 - How to tell which app has focus (X11 active window's `WM_CLASS`).
 - Keyword matching: case and punctuation Whisper adds ("Assistant,", "Assistant.").
+- Settings file location. Plan: `~/.config/ft-assistant/` on Linux, `%APPDATA%\FT Assistant\`
+  on Windows (chosen harness, Assistant key).
 
 ## Feature: distribution as one small setup script
 
@@ -92,6 +93,20 @@ Last updated: 2026-11-17
 4. **Hardware detection:** setup checks for an NVIDIA GPU and picks the GPU path with
    large-v3-turbo, or a CPU path with a smaller model.
 
+5. **One polyglot file: `FT-Assistant-setup.cmd`.** Windows (`cmd`) and Linux (`bash`) can
+   both read it; each skips the other's part, installs a Python runtime, then both run the
+   same shared Python setup program, which can be embedded in the same file.
+   Windows: double-click. Linux: `bash FT-Assistant-setup.cmd` (dashes, so no quotes needed).
+6. **The setup script is the installer.** There's no separate installer for new users.
+7. **Clean install flow** (first install, or reinstall with no trace of the tool or its stack):
+   1. Tell the user to **wait a moment while requirements are checked** (OS, NVIDIA GPU or not,
+      what's already installed, e.g. a harness app).
+   2. **Show the approximate total download size** of the components still needed, with a short
+      breakdown (Python runtime, speech engine, GPU libraries, Whisper model, harness app if chosen),
+      and the disk space needed, **before anything big is downloaded**.
+   3. Only then download and finish setup. When some components already exist, the summary
+      shows only what's still missing.
+
 ### Measured sizes (current Linux install, 2026-11-17)
 
 - Tool's own code: 24 KB.
@@ -100,25 +115,61 @@ Last updated: 2026-11-17
 - Model large-v3-turbo: 1.6 GB. Smaller models: ~150–500 MB.
 - Totals: ~3–3.5 GB download with an NVIDIA card, ~0.3–0.7 GB without one.
 
-### Under discussion
+### Format comparison (2026-11-17, why `.cmd`)
 
-- **How one file runs on both systems.** Leading idea: a "polyglot" file that both Windows
-  (`cmd`) and Linux (`bash`) can read. Each OS skips the other's part, installs a Python
-  runtime, then both run the same shared Python setup program. The Python could even be
-  embedded in the same file, so it really is one file.
-  - **Name: `FT-Assistant-setup.cmd`** (decided 2026-11-17; dashes so Linux terminal commands need no quotes).
-  - **Format comparison (2026-11-17):** no file type double-click-runs on both systems. On Linux,
-    a downloaded file is never executable until allowed, so Linux always needs
-    `bash "<file>"` or a "make executable" click, whatever the extension. Windows decides:
-    - `.cmd`: double-click runs on every Windows, no settings. Cmd is only the doorway:
-      it hands off at once to PowerShell (built into Windows 10/11) for downloads. **Best fit.**
-    - `.bat`: same as `.cmd`, older name.
-    - `.ps1`: double-click opens Notepad; execution policy blocks unsigned scripts; not on Linux.
-    - `.py`: Windows has no Python by default, so it fails "from zero".
-    - `.sh`: Windows can't run it.
-    - One "actually portable" executable (Cosmopolitan) that runs on both: exotic, larger,
-      needs a `.exe` name on Windows, and antivirus tools tend to flag it.
-- **Assistant key: maybe Caps Lock instead of mouse button 12.** (This reverses an earlier
-  decision; mouse button 12 isn't usable on Windows.) If adopted: Caps Lock must never be left
-  on after dictating. Preferably the key press is swallowed so caps never toggles; otherwise
-  the tool resets it after each use. Hold-to-talk also has to ignore the key's auto-repeat.
+No file type double-click-runs on both systems. On Linux, a downloaded file is never
+executable until allowed, so Linux always needs `bash <file>` or a "make executable" click,
+whatever the extension. Windows decides:
+- `.cmd`: double-click runs on every Windows, no settings. Cmd is only the doorway:
+  it hands off at once to PowerShell (built into Windows 10/11) for downloads. **Chosen.**
+- `.bat`: same as `.cmd`, older name.
+- `.ps1`: double-click opens Notepad; execution policy blocks unsigned scripts; not on Linux.
+- `.py`: Windows has no Python by default, so it fails "from zero".
+- `.sh`: Windows can't run it.
+- One "actually portable" executable (Cosmopolitan) that runs on both: exotic, larger,
+  needs a `.exe` name on Windows, and antivirus tools tend to flag it.
+
+### Caps Lock as the Assistant key (implementation notes)
+
+Caps Lock is the default (mouse button 12, the user's current trigger, isn't usable on Windows;
+the user can reassign theirs). Caps Lock must never be left on after dictating: preferably the
+key press is swallowed so caps never toggles; otherwise the tool resets it after each use.
+Hold-to-talk also has to ignore the key's auto-repeat.
+
+### Install, updates, uninstall (decided 2026-11-17)
+
+1. **Install location:** the installer suggests one and the user can change it before
+   installing. Suggested defaults are per-user, so no admin rights are needed:
+   - Linux: `~/.local/share/ft-assistant/`
+   - Windows: `%LOCALAPPDATA%\FT Assistant\`
+2. **Start at login** (plan): Linux `~/.config/autostart/` entry; Windows a shortcut in the
+   user's Startup folder.
+3. **Built-in update check** against the project's latest **GitHub Release** (the project will
+   live on GitHub; no repo there yet). This is the only thing that goes online outside setup;
+   it sends no user data.
+4. **Uninstall**, reachable from:
+   - the **setup screen** ("Uninstall" button), on both systems;
+   - **Windows:** Settings → Apps (registered per-user, so no admin needed);
+   - **Linux:** an "Uninstall FT Assistant" entry in the app menu.
+
+   It removes the tool, its Python runtime, the speech engine, GPU libraries, the Whisper model,
+   the login entry and app-menu entries. Draft details: a "keep my settings" checkbox, and it
+   **leaves the Claude and OpenCode apps installed** (they're separate programs the user may still
+   want), saying so.
+
+5. **Updates are never installed without asking.** When a newer release is found, the tool shows
+   a small prompt (version and what's new) with "Update now" / "Not now"; the setup screen also
+   has a "Check for updates" button. Plan: check at most once a day, quietly, and skip it if
+   offline. Updating backs up the current version so it can be rolled back.
+
+8. **On a clean machine the size summary is plain text, before any download** (decided
+   2026-11-17). The setup script's own console window shows "checking requirements", then the
+   size summary, and waits for the user to continue (e.g. press Enter) or cancel. Nothing is
+   downloaded until they continue, not even Python. The setup window opens afterwards.
+   - Implementation notes: the requirement check (OS, NVIDIA GPU, what's installed) runs in the
+     script's Windows and Linux parts, before Python exists. Sizes come from a tiny manifest on
+     the GitHub release (a few KB), or built-in estimates if offline.
+
+### Open questions
+
+None right now.
