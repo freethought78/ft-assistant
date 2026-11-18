@@ -15,7 +15,7 @@ setup file (`FT-Assistant-setup.cmd`), at `~/.local/share/ft-assistant/`:
 | Path | What |
 |---|---|
 | `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/` (hard-linked from the old tool's model), launchers `ft-assistant`, `ft-assistant-setup`, `ft-assistant-uninstall`, `install.py`, `install.json`. |
-| `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (events only, **never what the user says**), `update-state.json`, `.lock` (holds the process id). |
+| `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (from 0.2.0: **errors only** plus a start-up line; v0.1.0 still writes activity lines, never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 
 **The old tool is kept for rollback** at `~/.local/share/voice-dictation/` (stopped; its autostart
@@ -78,8 +78,11 @@ files are shared with the new install through hard links, so deleting either cop
   `pkill -f 'ft-assistant/python/bin/python3 -m [f]t_assistant'; sleep 1; setsid ~/.local/share/ft-assistant/ft-assistant >/dev/null 2>&1 < /dev/null &`
   (the `[f]` stops `pkill` from matching, and killing, the shell running the command itself).
 - Test changes before deploying them over the working version, and keep a way to roll back.
-- **Never log what the user says.** On 2026-11-17 they had transcript logging turned off and the old log deleted.
-  Don't add any log line, debug print or file that records transcript text. If debugging needs the text, ask first and remove it afterwards.
+- **Never log what the user says, and no activity either.** On 2026-11-17 transcript logging was
+  turned off; on 2026-11-18 the user chose an **errors-only log** (plus one start-up line) and had
+  the old tool's log deleted. Don't add log lines (above debug level), debug prints or files that
+  record what was said or when/how much anyone dictates; `tests/test_logging_policy.py` checks it.
+  If debugging needs more, ask first and remove it afterwards.
 
 - **Testing against Claude or OpenCode:** never type, send or create test input in any of the user's
   existing projects or sessions. Tests may only use a throwaway or neutral folder made for this
