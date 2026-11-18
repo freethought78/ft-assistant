@@ -104,6 +104,39 @@ CLIs were already installed; it runs the official installers `curl -fsSL https:/
 | bash` and `curl -fsSL https://opencode.ai/install | bash` in a visible terminal after asking).
 Check for updates and Uninstall are placeholders until their phases.
 
+## Planned for the first release (added 2026-11-18, not started)
+
+Requested by the user to be built before the first release. Documented only; no code yet.
+
+### "Dictation only" choice
+
+- A new choice **at the top of the assistant list** on the setup screen, above OpenCode and
+  Claude Code: **"Dictation only"**: no assistant, just the typing tool.
+- With it chosen, **Save never warns** that an assistant isn't installed, and nothing about
+  assistants is checked or asked. It's a complete, first-class setup, not a fallback.
+- Likely the right default for first-time setup when neither assistant is installed (to confirm).
+- To settle when building:
+  - Is the keyword switched off, so "Assistant, ..." is typed as ordinary text? (Probably yes.)
+  - "Assistant setup" (in whatever form the custom word takes, below) should still open the setup
+    screen, or the user has no voice way back to it. The menu entry also opens it.
+  - The privacy note on the setup screen can say that nothing goes online in this mode.
+
+### Choosing the keyword
+
+- Next to the Assistant key setting, let the user **change the spoken keyword** ("Assistant") to
+  any word they like. The user called it a "wake word"; a clearer name is needed. Candidates:
+  **"command word"** (recommended: it's the word that turns dictation into a command, and doesn't
+  clash with the "Assistant key"), "trigger word", "keyword".
+- Wherever the keyword appears, the chosen word is used instead:
+  - routing ("<word>, request"), and "<word> setup" for the setup screen;
+  - the Whisper hint words (`KEYWORD_HINTS` in `textproc.py`), which keep the word from being dropped;
+  - the setup screen's reminder line and the README's examples.
+- To settle when building: allowed words (one word? letters only?), a warning for common words that
+  start ordinary sentences ("the", "so", "okay") or that Whisper may misspell, and whether the
+  "Assistant key" keeps that name when the word changes.
+- Test like the original: synthetic speech through both models to check the chosen word survives
+  (the hint-word test in phase 5 is the template).
+
 ## Feature: distribution as one small setup script
 
 ### Decided

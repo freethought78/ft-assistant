@@ -17,7 +17,8 @@ class SetupPython(unittest.TestCase):
             self.assertEqual(gui.setup_python(), (sys.executable, []))
 
     def test_system_python_when_own_tk_is_plain(self):
-        with mock.patch.object(gui, "draws_smooth_fonts", side_effect=lambda e: e == "/usr/bin/python3"), \
+        with mock.patch.object(gui.sys, "executable", "/opt/bundled/bin/python3"), \
+                mock.patch.object(gui, "draws_smooth_fonts", side_effect=lambda e: e == "/usr/bin/python3"), \
                 mock.patch.object(gui.shutil, "which", return_value="/usr/bin/python3"), \
                 mock.patch.object(gui, "vendor_dir", return_value="/v"):
             self.assertEqual(gui.setup_python(), ("/usr/bin/python3", ["/v"]))
