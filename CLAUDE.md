@@ -109,7 +109,9 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
   on this machine is currently signed in only as `ftftft78`. Before any GitHub step, check
   `gh auth status` shows `freethought78` as the active account; if not, ask the user to sign in
   (`gh auth login`) or switch (`gh auth switch`) themselves.
-- The repo doesn't exist on GitHub yet; create it only with the user's go-ahead.
+- The repo is **public**: https://github.com/freethought78/ft-assistant (created 2026-11-18;
+  `main` = live version, `next` = redesign). Never commit personal details (health, other
+  projects, emails); history was scrubbed once before the first push.
 
 ## Working with the user
 

@@ -185,7 +185,7 @@ tool's model was untouched.
    (chosen harness, Assistant key).
 4. **Updates are never installed without asking.**
    - **Where:** the project's latest **GitHub Release** on the user's **`freethought78`** account
-     (never `ftftft78`; no repo there yet). One request to GitHub's public "latest release" API,
+     (never `ftftft78`): public repo https://github.com/freethought78/ft-assistant. One request to GitHub's public "latest release" API,
      no account, no user data. This is the only thing that goes online outside setup.
    - **When:** about a minute after the tool starts, then at most once every 24 hours while
      running; **never during a dictation**; plus a **Check for updates** button. Offline or no
@@ -201,7 +201,7 @@ tool's model was untouched.
      schedule and the setup screen. Live-tested by the user against a pretend local release
      (notification with a Show button, setup screen with what's new, Not now, Check for
      updates). Until the installer exists, "Update now" opens the release page. The repo name is
-     a placeholder, `freethought78/ft-assistant`, to confirm when the repo is created. Testing
+     `freethought78/ft-assistant` (created 2026-11-18; no releases yet). Testing
      hooks: `FT_ASSISTANT_UPDATE_URL`, `FT_ASSISTANT_UPDATE_DELAY`, `FT_ASSISTANT_UPDATE_TICK`.
 5. **Uninstall**, from the setup screen (both systems), Windows Settings → Apps (registered
    per-user), or an "Uninstall FT Assistant" entry in the Linux app menu. Removes the tool, its
