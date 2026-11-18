@@ -34,6 +34,8 @@ It starts at login from `~/.config/autostart/voice-dictation.desktop` (runs `run
 
 - **`main` = the live tool.** It matches what's deployed. Only small fixes the user asks for go here.
 - **`next` = the redesign** (started 2026-11-17): discussion, then implementation. It never deploys.
+  The agreed design lives in `docs/design-notes.md`. Update it as decisions are made, and don't build
+  anything from it until the user says the design is ready.
   When the user says they're satisfied, merge `next` into `main`, then deploy. Not before.
 - `deploy.sh --yes` refuses unless the checkout is on `main` with no uncommitted changes.
 - Check which branch is checked out before editing. For a live fix while on `next`: commit or stash,
