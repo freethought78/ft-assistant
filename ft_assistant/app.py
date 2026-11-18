@@ -11,6 +11,8 @@ import fcntl
 import logging
 import os
 import queue
+import subprocess
+import sys
 import threading
 import time
 
@@ -20,6 +22,7 @@ from . import __version__, config, harness, textproc
 from . import platform_linux as plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
+from .setup_ui import CHANGED as SETUP_CHANGED
 
 MIN_SEC = 0.35             # ignore taps shorter than this
 MIN_RMS = 0.002            # ignore near-silent recordings
@@ -57,6 +60,7 @@ class App:
         self.down = False
         self.our_windows = set()        # terminal windows this tool opened for an agent
         self.agent_window = {}          # harness key -> its most recent window we opened
+        self.setup_proc = None          # the setup screen, while it's open
         self.caps_trigger = (settings.trigger.get("type") == "key"
                              and settings.trigger.get("keysym") == "Caps_Lock")
 
@@ -64,7 +68,7 @@ class App:
 
     def on_press(self):
         with self.ctl:
-            if self.down:
+            if self.down or self.setup_proc is not None:   # paused while setup is open
                 return
             self.down = True
             try:
@@ -169,8 +173,24 @@ class App:
                 return
 
     def open_setup(self):
-        # The setup screen is built in the next phase.
-        plat.notify("The setup screen isn't built yet in this development version.")
+        """Show the setup screen in its own process; the Assistant key is paused meanwhile."""
+        if self.setup_proc is not None:
+            return
+        self.setup_proc = subprocess.Popen([sys.executable, "-m", "ft_assistant.setup_ui"])
+        threading.Thread(target=self._wait_setup, daemon=True).start()
+
+    def _wait_setup(self):
+        code = self.setup_proc.wait()
+        old_trigger = self.settings.trigger
+        self.settings = config.load()
+        self.caps_trigger = (self.settings.trigger.get("type") == "key"
+                             and self.settings.trigger.get("keysym") == "Caps_Lock")
+        if code == SETUP_CHANGED and self.settings.trigger != old_trigger:
+            log.info("Assistant key changed; restarting to use it")
+            self.engine.stop()
+            self.rec.close()
+            os.execv(sys.executable, [sys.executable, "-m", "ft_assistant"])
+        self.setup_proc = None
 
     def release_resources(self):
         """Close the tool's own mic stream and stop the engine right after each dictation.
@@ -202,4 +222,6 @@ def main():
              trig.get("keysym") or f"mouse button {trig.get('button')}",
              settings.harness or "(not chosen)")
     print("FT Assistant ready.")
+    if not settings.harness_chosen:
+        app.open_setup()            # first run: choose an assistant before anything else
     plat.TriggerListener(trig, app.on_press, app.on_release).run()   # blocks forever

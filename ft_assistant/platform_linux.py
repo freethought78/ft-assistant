@@ -4,6 +4,7 @@ Wayland isn't supported yet (it needs a different key-capture and typing method)
 
 import ctypes
 import ctypes.util
+import functools
 import logging
 import os
 import subprocess
@@ -243,3 +244,69 @@ def is_terminal_class(cls):
 def notify(msg, title="FT Assistant"):
     subprocess.Popen(["notify-send", "-a", "FT Assistant", "-t", "4000", title, msg],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# ---------------------------------------------------------------- key capture (setup screen)
+
+@functools.lru_cache(maxsize=1)
+def _keysym_names():
+    for group in ("xf86", "xkb"):
+        try:
+            XK.load_keysym_group(group)
+        except Exception:
+            pass
+    names = {}
+    for k, v in vars(XK).items():
+        if k.startswith("XK_") and isinstance(v, int):
+            names.setdefault(v, k[3:])
+    return names
+
+
+def capture_next(timeout=15.0):
+    """Wait for the next key press or mouse button press anywhere on the screen.
+
+    Returns {"type": "key", "keysym": name} or {"type": "button", "button": n}, or None on
+    timeout. Nothing is grabbed, so the press also reaches the focused window."""
+    rdpy = display.Display()
+    cdpy = display.Display()
+    ctx = rdpy.record_create_context(0, [record.AllClients], [{
+        "core_requests": (0, 0), "core_replies": (0, 0),
+        "ext_requests": (0, 0, 0, 0), "ext_replies": (0, 0, 0, 0),
+        "delivered_events": (0, 0), "device_events": (X.KeyPress, X.ButtonPress),
+        "errors": (0, 0), "client_started": False, "client_died": False,
+    }])
+    result = {}
+    done = threading.Event()
+
+    def callback(reply):
+        if done.is_set() or reply.category != record.FromServer or reply.client_swapped:
+            return
+        data = reply.data
+        while data and not done.is_set():
+            ev, data = rq.EventField(None).parse_binary_value(data, rdpy.display, None, None)
+            if ev.type == X.ButtonPress:
+                result["t"] = {"type": "button", "button": int(ev.detail)}
+            elif ev.type == X.KeyPress:
+                sym = rdpy.keycode_to_keysym(ev.detail, 0)
+                name = _keysym_names().get(sym)
+                if not name:
+                    continue                      # unknown key: keep waiting
+                result["t"] = {"type": "key", "keysym": name}
+            done.set()
+
+    t = threading.Thread(target=lambda: rdpy.record_enable_context(ctx, callback), daemon=True)
+    t.start()
+    done.wait(timeout)
+    done.set()
+    try:
+        cdpy.record_disable_context(ctx)
+        cdpy.flush()
+        t.join(2)
+        cdpy.record_free_context(ctx)
+        cdpy.close()
+    except Exception:
+        pass
+    trig = result.get("t")
+    if trig and trig.get("keysym") == "Caps_Lock":
+        caps_lock_off()                           # pressing it to choose it toggled it on
+    return trig

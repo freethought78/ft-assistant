@@ -94,6 +94,15 @@ Last updated: 2026-11-17 (full review and cleanup)
        (other programs use them).
      - Choosing a "best avoided" key shows a short warning and asks to confirm; still allowed.
 6. Also on this screen: **Check for updates** and **Uninstall** (see below).
+7. **Dark mode** (user request, 2026-11-18): the screen and its Yes/No dialogs use a dark theme.
+
+**Build status (phase 2, 2026-11-18):** built in `ft_assistant/setup_ui.py` (own process, the
+Assistant key is paused while it's open; a changed key restarts the app). Live-tested by the user:
+first-run opening, choosing a harness, refusing left click, capturing a new key, saving and
+restarting, and reopening with "Assistant setup". **Not yet run: the Install… button** (both
+CLIs were already installed; it runs the official installers `curl -fsSL https://claude.ai/install.sh
+| bash` and `curl -fsSL https://opencode.ai/install | bash` in a visible terminal after asking).
+Check for updates and Uninstall are placeholders until their phases.
 
 ## Feature: distribution as one small setup script
 
