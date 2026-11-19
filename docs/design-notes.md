@@ -232,7 +232,7 @@ Setup and installer reuse what's already on the computer:
 - **NVIDIA libraries:** used from the system when cuBLAS 12 and cuDNN 9 are installed there
   (Linux `ldconfig`, Windows `PATH`); otherwise pip copies.
 - **Whisper model:** found in the Hugging Face cache (`HF_HUB_CACHE`, `HF_HOME`,
-  `~/.cache/huggingface/hub`) or the earlier voice-dictation tool, and **hard-linked** (no extra
+  `~/.cache/huggingface/hub`), and **hard-linked** (no extra
   disk; independent of the original). Newer caches keep big files in a shared blob store outside
   the model folder; those links are resolved to the real file.
 - **pip's shared download cache**, Claude Code / OpenCode if installed, and the system tools.
