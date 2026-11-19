@@ -30,6 +30,12 @@ Last updated: 2026-11-17 (full review and cleanup)
   panels excluded, per monitor), scrolls, and keeps Save/Cancel pinned. Running a newer setup
   file offers the existing install's folder, so it updates in place: the way to deliver a fix
   when the in-app updater can't be reached.
+- **v0.2.4** (2026-11-19): after a reboot, "Assistant" said Claude Code wasn't installed: it
+  was installed with npm under nvm, whose folder only ~/.bashrc adds to the search path, and the
+  app started at login never reads it. Claude Code and OpenCode are now also looked for in the
+  usual install folders (nvm, npm, ~/.local/bin, their own installers' folders, Volta, Bun, asdf;
+  Windows: npm, ~/.local/bin) and started by full path. Setup no longer looks in the retired
+  old tool's folder for a model.
 
 ## Carried over from the current tool (unchanged)
 
