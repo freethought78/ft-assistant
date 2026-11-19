@@ -83,13 +83,52 @@ class HarnessCommands(unittest.TestCase):
                 mock.patch.object(config, "sessions_dir", return_value=Path(home) / "FT Assistant sessions"), \
                 mock.patch.object(harness, "find_exe", return_value="/usr/bin/claude"), \
                 mock.patch.object(harness, "terminal_command", side_effect=lambda a, f: ["term", "--"] + a), \
-                mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
+                mock.patch.dict(os.environ, {"CLAUDECODE": "1", "PATH": "/bin"}):
             harness.open_session("claude", "hello", launcher=lambda cmd, **kw: calls.append((cmd, kw)))
             self.assertTrue((Path(home) / "FT Assistant sessions").is_dir())
         cmd, kw = calls[0]
-        self.assertEqual(cmd, ["term", "--", "claude", "hello"])
+        self.assertEqual(cmd, ["term", "--", "/usr/bin/claude", "hello"])   # full path
         self.assertTrue(kw["cwd"].endswith("FT Assistant sessions"))
         self.assertNotIn("CLAUDECODE", kw["env"])
+        self.assertEqual(kw["env"]["PATH"].split(os.pathsep)[0], "/usr/bin")
+
+    def test_found_in_nvm_when_not_on_search_path(self):
+        # Installed with npm under nvm, and the app was started at login (no ~/.bashrc).
+        with tempfile.TemporaryDirectory() as home:
+            for v in ("v18.20.1", "v24.19.0", "v9.0.0"):
+                b = Path(home, ".nvm", "versions", "node", v, "bin")
+                b.mkdir(parents=True)
+                exe = b / "claude"
+                exe.write_text("#!/bin/sh\n")
+                exe.chmod(0o755)
+            dirs = harness.install_dirs(home=home, env={}, windows=False)
+            nvm_dirs = [d.parent.name for d in dirs if ".nvm" in str(d)]
+            self.assertEqual(nvm_dirs, ["v24.19.0", "v18.20.1", "v9.0.0"])   # newest first
+            self.assertIn(Path(home, ".local", "bin"), dirs)
+            self.assertIn(Path(home, ".opencode", "bin"), dirs)
+            with mock.patch.dict(os.environ, {"PATH": "/nonexistent"}):
+                found = harness.find_exe(harness.HARNESSES["claude"], dirs=dirs)
+            self.assertEqual(found, str(Path(home, ".nvm", "versions", "node", "v24.19.0", "bin",
+                                             "claude")))
+            with mock.patch.dict(os.environ, {"PATH": "/nonexistent"}):
+                self.assertIsNone(harness.find_exe(harness.HARNESSES["opencode"], dirs=dirs))
+
+    def test_search_path_wins(self):
+        which = lambda name, path=None: "/usr/bin/claude" if path is None else None  # noqa: E731
+        self.assertEqual(harness.find_exe(harness.HARNESSES["claude"], which=which, dirs=[]),
+                         "/usr/bin/claude")
+
+    def test_windows_install_dirs(self):
+        dirs = harness.install_dirs(home=r"C:\Users\u", env={"APPDATA": r"C:\Users\u\AppData\Roaming"},
+                                    windows=True)
+        self.assertIn(Path(r"C:\Users\u\AppData\Roaming") / "npm", dirs)
+        self.assertIn(Path(r"C:\Users\u") / ".local" / "bin", dirs)
+
+    def test_with_dir_on_path(self):
+        env = harness.with_dir_on_path({"PATH": os.pathsep.join(["/usr/bin", "/bin"])}, "/opt/x")
+        self.assertEqual(env["PATH"], os.pathsep.join(["/opt/x", "/usr/bin", "/bin"]))
+        again = harness.with_dir_on_path(env, "/opt/x")
+        self.assertEqual(again["PATH"], env["PATH"])
 
     def test_open_session_missing_cli(self):
         with mock.patch.object(harness, "find_exe", return_value=None):
