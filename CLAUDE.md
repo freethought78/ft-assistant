@@ -11,7 +11,7 @@ type comfortably.
 
 Since **2026-11-18 the user runs FT Assistant** (installed v0.1.0 from the GitHub release with the
 setup file `FT-Assistant-setup.cmd`, then updated through the built-in updater; **v0.2.3** since
-2026-11-18), at `~/.local/share/ft-assistant/`. The user wants to run the same rolling release
+2026-11-18, offered v0.2.4 on 2026-11-19), at `~/.local/share/ft-assistant/`. The user wants to run the same rolling release
 everyone else gets:
 
 | Path | What |
@@ -28,7 +28,7 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
 
 ### Branches and releases
 
-- **`main` = released code** (latest tag `v0.2.3`, which the user runs). **`next` = development**
+- **`main` = released code** (latest tag `v0.2.4`; the user runs v0.2.3 until they accept the update). **`next` = development**
   (now 0.3.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
@@ -95,7 +95,7 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   check `gh auth status` shows `freethought78` as the active account; if not, ask the user to
   sign in (`gh auth login`) or switch (`gh auth switch`) themselves.
 - The repo is **public**: https://github.com/freethought78/ft-assistant (created 2026-11-18;
-  releases: v0.1.0 to v0.2.3). Never commit personal details (health, other
+  releases: v0.1.0 to v0.2.4). Never commit personal details (health, other
   projects, emails); history was scrubbed once before the first push.
 
 ## Working with the user
