@@ -24,6 +24,11 @@ Last updated: 2026-11-17 (full review and cleanup)
   copy before replacing files on Windows, and re-running it repairs such an install (tested in
   the bottle with a Tk-less Python). The installer no longer stops a process from a stale lock
   unless it is FT Assistant.
+- **v0.2.3** (2026-11-18): a second tester's setup window was taller than his screen (Save and
+  "Update now" out of reach). The window now fits the usable part of its monitor (taskbar and
+  panels excluded, per monitor), scrolls, and keeps Save/Cancel pinned. Running a newer setup
+  file offers the existing install's folder, so it updates in place: the way to deliver a fix
+  when the in-app updater can't be reached.
 
 ## Carried over from the current tool (unchanged)
 
