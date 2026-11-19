@@ -194,7 +194,7 @@ run_installer "$@"
 RC=$?
 if [ $RC -eq 3 ] && [ "$PY_SOURCE" = "system" ]; then
   say ""
-  say "The speech engine isn't available for this computer's Python; using a downloaded Python instead."
+  say "This computer's Python can't be used for FT Assistant; using a downloaded Python instead."
   PY_SOURCE=standalone
   download_python
   run_installer "$@"
@@ -235,7 +235,9 @@ function Find-SystemPython {
   if ($p -and $p.Source -notmatch 'WindowsApps') { $cands += $p.Source }
   foreach ($exe in $cands) {
     try {
-      & $exe -c 'import sys, venv, ensurepip; assert (3, 9) <= sys.version_info[:2] <= (3, 13)' 2>$null
+      # ... that can also open windows (the setup screen needs Tcl/Tk, an optional part of the
+      # python.org installer). The installer checks this again before installing anything.
+      & $exe -c 'import sys, venv, ensurepip; assert (3, 9) <= sys.version_info[:2] <= (3, 13); import tkinter; r = tkinter.Tk(); r.withdraw(); r.update_idletasks(); r.destroy()' 2>$null
       if ($LASTEXITCODE -eq 0) { return $exe }
     } catch { }
   }
@@ -320,6 +322,33 @@ $text = [IO.File]::ReadAllText($env:FT_SETUP_FILE)
 $mark = '#__FT_ASSISTANT_' + 'INSTALLER__'
 $code = $text.Substring($text.IndexOf("`n" + $mark) + $mark.Length + 2)
 [IO.File]::WriteAllText((Join-Path $dir 'install.py'), $code)
+# A running FT Assistant keeps files in its folder open, and Windows can't delete open files,
+# so stop it (and its speech engine and setup window) before replacing anything: otherwise
+# repairing an existing install fails on the old Python folder. Matched two ways, because the
+# lock file can't be read while the app holds it, and with a reused Python the app's process
+# runs from that Python's folder rather than the install folder:
+#   - any program started from the install folder
+#   - any Python running FT Assistant's modules ("-m ft_assistant...")
+function Stop-RunningApp {
+  $ids = @()
+  $prefix = $dir.TrimEnd('\') + '\'
+  foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
+    try { if ($p.Path -and $p.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { $ids += $p.Id } } catch { }
+  }
+  try {
+    foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction Stop)) {
+      if ($p.CommandLine -and $p.CommandLine -match '-m\s+ft_assistant(\.|\s|$)') { $ids += [int]$p.ProcessId }
+    }
+  } catch { }
+  $ids = @($ids | Where-Object { $_ -ne $PID } | Sort-Object -Unique)
+  if ($ids.Count -eq 0) { return }
+  # (taskkill complains about a process already ended with its parent: harmless, so ignored)
+  foreach ($i in $ids) { try { & taskkill /PID $i /T /F 2>$null | Out-Null } catch { } }
+  Start-Sleep -Seconds 2
+  Say 'Stopped the running FT Assistant.'
+}
+Stop-RunningApp
+
 Say 'Step 2 of 6: Python'
 $env:PYTHONNOUSERSITE = '1'
 $extra = @()
@@ -336,7 +365,7 @@ if ($pySource -eq 'standalone') { Get-StandalonePython }
 $rc = $LASTEXITCODE
 if ($rc -eq 3 -and $pySource -eq 'system') {
   Say ''
-  Say "The speech engine isn't available for this computer's Python; using a downloaded Python instead."
+  Say "This computer's Python can't be used for FT Assistant; using a downloaded Python instead."
   $pySource = 'standalone'
   Get-StandalonePython
   & (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource @extra

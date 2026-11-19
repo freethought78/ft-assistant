@@ -25,6 +25,7 @@ Testing hooks (environment):
 import argparse
 import io
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -111,6 +112,25 @@ def run(cmd, **kw):
                HF_HUB_DISABLE_XET="1",                # plain per-file progress bars for the model
                HF_HUB_VERBOSITY="error")              # no "unauthenticated requests" warning
     subprocess.run([str(c) for c in cmd], check=True, env=env, **kw)
+
+
+# Opens (and at once hides and closes) a real Tk window: the setup screen needs this. Only
+# importing tkinter isn't enough, since a Python can have tkinter but be missing Tcl/Tk itself.
+WINDOW_TEST = "import tkinter; r = tkinter.Tk(); r.withdraw(); r.update_idletasks(); r.destroy()"
+
+
+def can_draw_windows(py):
+    """True if this Python can open the setup screen. A python.org install without its optional
+    "tcl/tk" part (or a Linux Python without python3-tk) can't: the setup screen would crash
+    unseen on first start."""
+    env = dict(os.environ, PYTHONNOUSERSITE="1")
+    try:
+        r = subprocess.run([str(py), "-c", WINDOW_TEST], env=env, timeout=60,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0
 
 
 def install_packages(install_dir, gpu, gpu_libs="pip"):
@@ -421,6 +441,26 @@ def write_vocabulary():
                      "Claude\nOpenCode\n", encoding="utf-8")
 
 
+APP_CMDLINE_RE = re.compile(r"-m\s+ft_assistant\s*$")    # the main program, not setup or worker
+
+
+def is_ft_assistant(pid):
+    """True only if process `pid` is FT Assistant's main program. The lock file can hold a stale
+    process id from an earlier run, by now reused by an unrelated program: never stop that."""
+    try:
+        if IS_WINDOWS:
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                                f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+                               capture_output=True, text=True, timeout=30)
+            cmdline = r.stdout.strip()
+        else:
+            cmdline = Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\0", b" ").decode(
+                "utf-8", "replace").strip()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return bool(APP_CMDLINE_RE.search(cmdline))
+
+
 def stop_running_app():
     """Stop a running FT Assistant (it holds a lock file; its process id is written in it)."""
     lock = config_dir() / ".lock"
@@ -428,7 +468,7 @@ def stop_running_app():
         pid = int(lock.read_text().strip() or 0)
     except (OSError, ValueError):
         return
-    if pid <= 0:
+    if pid <= 0 or pid == os.getpid() or not is_ft_assistant(pid):
         return
     try:
         if IS_WINDOWS:
@@ -473,6 +513,12 @@ def cmd_install(a):
     gpu = a.gpu == "yes"
     d.mkdir(parents=True, exist_ok=True)
     stop_running_app()
+    if not can_draw_windows(python_exe(d)):
+        if a.python_source == "system":
+            say("This computer's Python can't open windows (its Tcl/Tk part is missing), so the")
+            say("setup screen wouldn't work with it.")
+            raise SystemExit(3)        # the setup script retries with a downloaded Python
+        say("Warning: this Python can't open windows, so the setup screen may not work.")
     step(3, "Installing the speech engine")
     try:
         install_packages(d, gpu, a.gpu_libs)
