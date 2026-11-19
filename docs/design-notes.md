@@ -17,6 +17,13 @@ Last updated: 2026-11-17 (full review and cleanup)
 - **v0.2.1** (2026-11-18): setup fix found by the first test on a real Windows PC: the
   install-folder prompt showed no folder (PowerShell read `$default?` as one variable name).
   Also tidied the size table. The app itself is unchanged.
+- **v0.2.2** (2026-11-18): the friend's install never started: setup had reused a Python
+  without Tcl/Tk, and the app imports the setup screen at start-up, so it crashed at once (no
+  setup screen, no Assistant key, no log). Setup now only reuses a Python that can open a
+  window (checked again by install.py, which falls back to a downloaded Python), stops a running
+  copy before replacing files on Windows, and re-running it repairs such an install (tested in
+  the bottle with a Tk-less Python). The installer no longer stops a process from a stale lock
+  unless it is FT Assistant.
 
 ## Carried over from the current tool (unchanged)
 
