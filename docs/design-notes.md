@@ -9,7 +9,8 @@ Last updated: 2026-11-17 (full review and cleanup)
 
 - **v0.1.0** (2026-11-18): first release; the user switched their daily tool to it the same day
   (installed from the release's setup file, reusing Python and the model; Assistant key mouse
-  button 12). The old tool is kept for rollback.
+  button 12). The old tool was kept for rollback until 2026-11-19, when the user retired it
+  (install deleted, its files removed from the repo).
 - **v0.2.0** (2026-11-18): Dictation only, the choosable command word, the errors-only log, the
   launcher fix. **First real update:** the user's v0.1.0 found it with "Check for updates",
   "Update now" handed over to the new installer, and 0.2.0 started by itself; v0.1.0 is kept in

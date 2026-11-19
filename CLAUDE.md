@@ -10,26 +10,25 @@ type comfortably.
 ## Where the live tool is
 
 Since **2026-11-18 the user runs FT Assistant** (installed v0.1.0 from the GitHub release with the
-setup file `FT-Assistant-setup.cmd`; **updated to v0.2.0** through the built-in updater the same
-day), at `~/.local/share/ft-assistant/`:
+setup file `FT-Assistant-setup.cmd`, then updated through the built-in updater; **v0.2.3** since
+2026-11-18), at `~/.local/share/ft-assistant/`. The user wants to run the same rolling release
+everyone else gets:
 
 | Path | What |
 |---|---|
-| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/` (hard-linked from the old tool's model), launchers `ft-assistant`, `ft-assistant-setup`, `ft-assistant-uninstall`, `install.py`, `install.json`. |
+| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-setup`, `ft-assistant-uninstall`, `install.py`, `install.json`. |
 | `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (**errors only** plus a start-up line since 0.2.0; never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 
-**The old tool is kept for rollback** at `~/.local/share/voice-dictation/` (stopped; its autostart
-entry moved to `voice-dictation.desktop.autostart-backup` in that folder). To go back: stop FT
-Assistant, move that file back to `~/.config/autostart/voice-dictation.desktop`, and start
-`~/.local/share/voice-dictation/run.sh`. Don't delete the old tool until the user says so (its model
-files are shared with the new install through hard links, so deleting either copy is safe anyway).
+The **old tool (voice-dictation) was retired on 2026-11-19** at the user's request: its install
+was deleted and its files removed from the repo (still in git history). There's no rollback to it;
+the user doesn't intend to go back. Fixes reach the user as FT Assistant releases.
 
 `~/bin/start-whisper-stt` is an **older, unrelated** script (a whisper-fastapi server). It isn't part of this tool.
 
 ### Branches and releases
 
-- **`main` = released code** (latest tag `v0.2.3`; the user runs v0.2.0 until they accept the update). **`next` = development**
+- **`main` = released code** (latest tag `v0.2.3`, which the user runs). **`next` = development**
   (now 0.3.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
@@ -37,10 +36,9 @@ files are shared with the new install through hard links, so deleting either cop
   within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on
   the user's own install worked (2026-11-18).
 - Only with the user's go-ahead: commits, pushes, releases, and anything that restarts the tool.
-- `deploy.sh`, `dictate.py`, `whisper_worker.py`, `run.sh` at the repo root belong to the old tool;
-  keep them until the user retires it.
 - **Tests:** `python3 -m unittest discover -s tests -t .`
-- **Try a dev build next to the live tool:** `./run-dev.sh` (own settings/log in
+- **Try a dev build next to the live tool:** `./run-dev.sh` (borrows the install's Python, model
+  and word list; own settings/log in
   `~/.config/ft-assistant-dev/`, Assistant key Scroll Lock there; **never button 12**, which the
   live tool uses). Tell the user before starting it, and stop it after testing.
 - **Windows testing** uses only the existing Bottles bottle **`DannyRando-Test`** (Flatpak Bottles).
