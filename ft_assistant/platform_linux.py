@@ -230,6 +230,60 @@ def window_info(wid):
         return "", ""
 
 
+def _contains(rect, x, y):
+    rx, ry, rw, rh = rect
+    return rx <= x < rx + rw and ry <= y < ry + rh
+
+
+def _intersect(a, b):
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[0] + a[2], b[0] + b[2]), min(a[1] + a[3], b[1] + b[3])
+    return (x1, y1, x2 - x1, y2 - y1) if x2 > x1 and y2 > y1 else None
+
+
+def work_area(x, y):
+    """(left, top, width, height) of the usable part (without panels) of the monitor at x, y,
+    or None if unknown. Each monitor counts on its own: with monitors of different heights the
+    desktop's combined work area is taller than the smaller monitor."""
+    try:
+        d = display.Display()
+    except Exception:
+        return None
+    try:
+        root = d.screen().root
+
+        def prop(name):
+            p = root.get_full_property(d.intern_atom(name), X.AnyPropertyType)
+            return list(p.value) if p else None
+
+        desk = (prop("_NET_CURRENT_DESKTOP") or [0])[0]
+        # Per-monitor work areas, published by GNOME-family desktops (Cinnamon, GNOME, MATE)
+        vals = prop(f"_GTK_WORKAREAS_D{desk}")
+        rects = [tuple(vals[i:i + 4]) for i in range(0, len(vals or []) - 3, 4)]
+        for r in rects:
+            if _contains(r, x, y):
+                return r
+        # Otherwise: the monitor at x, y, minus the desktop's (combined) work area
+        monitor = None
+        try:
+            from Xlib.ext import randr
+            for m in randr.get_monitors(root).monitors:
+                r = (m.x, m.y, m.width_in_pixels, m.height_in_pixels)
+                if _contains(r, x, y):
+                    monitor = r
+        except Exception:
+            pass
+        wa = prop("_NET_WORKAREA")
+        combined = tuple(wa[4 * desk:4 * desk + 4]) if wa and len(wa) >= 4 * desk + 4 else None
+        if monitor and combined:
+            return _intersect(monitor, combined) or monitor
+        return monitor or combined
+    except Exception:
+        return None
+    finally:
+        d.close()
+
+
 def active_window():
     """(window id, class_lowercase, title) of the focused window, or (None, "", "")."""
     global _wdpy

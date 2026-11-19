@@ -108,12 +108,32 @@ def apply_dark_theme(root):
               foreground=[("disabled", DISABLED)],
               bordercolor=[("disabled", "#33353a"), ("focus", ACCENT)],
               lightcolor=[("pressed", BUTTON_ACTIVE)], darkcolor=[("pressed", BUTTON_ACTIVE)])
+    style.configure("Vertical.TScrollbar", background=BUTTON, troughcolor=BG, bordercolor=BG,
+                    arrowcolor=FG, lightcolor=BUTTON, darkcolor=BUTTON)
+    style.map("Vertical.TScrollbar", background=[("active", BUTTON_ACTIVE)])
     style.configure("TRadiobutton", background=BG, foreground=FG, indicatorbackground=BUTTON,
                     indicatorforeground=FG, indicatormargin=(0, 0, 8, 0))
     style.map("TRadiobutton",
               background=[("active", BG)],
               indicatorbackground=[("selected", ACCENT), ("active", BUTTON_ACTIVE)],
               foreground=[("disabled", DISABLED)])
+
+
+# Room for the window's title bar and borders, which the desktop adds around the window.
+DECOR_W, DECOR_H = 16, 48
+MIN_W, MIN_H = 560, 240
+
+
+def fit_window(need_w, need_h, area):
+    """(width, height, x, y) for the window: its natural size, shrunk to fit `area` (the usable
+    part of the monitor: without taskbar or panels) and centered in it. The content scrolls
+    when it doesn't fit, and Save/Cancel stay visible at the bottom."""
+    ax, ay, aw, ah = area
+    w = max(min(need_w, aw - DECOR_W), min(MIN_W, aw - DECOR_W))
+    h = max(min(need_h, ah - DECOR_H), min(MIN_H, ah - DECOR_H))
+    x = ax + max(0, (aw - w - DECOR_W) // 2)
+    y = ay + max(0, (ah - h - DECOR_H) // 2)
+    return w, h, x, y
 
 
 def installed_dir():
@@ -131,13 +151,27 @@ class SetupWindow:
         self.capture_q = queue.Queue()
         self.capturing = False
 
+        root.withdraw()                 # shown once it's sized to fit the screen
         root.title("FT Assistant setup")
-        root.minsize(560, 0)
         apply_dark_theme(root)
 
-        f = ttk.Frame(root, padding=18)
-        f.grid(sticky="nsew")
+        # The settings scroll when the window can't be tall enough for them (small screens,
+        # large display scaling); Save/Cancel sit below, outside the scrolling part.
+        self.canvas = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
+        self.scrollbar = ttk.Scrollbar(root, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        root.rowconfigure(0, weight=1)
         root.columnconfigure(0, weight=1)
+        f = self.content = ttk.Frame(self.canvas, padding=(18, 18, 18, 4))
+        self._content_id = self.canvas.create_window(0, 0, window=f, anchor="nw")
+        f.bind("<Configure>", lambda e: self._content_changed())
+        self.canvas.bind("<Configure>", lambda e: (
+            self.canvas.itemconfigure(self._content_id, width=e.width), self._update_scrollbar()))
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            root.bind_all(seq, self._wheel, add="+")
+        self.fitted_need = None
         f.columnconfigure(0, weight=1)
         r = 0
         ttk.Label(f, text="FT Assistant setup", style="Title.TLabel").grid(row=r, sticky="w")
@@ -240,9 +274,12 @@ class SetupWindow:
         self.release = None
         r += 1
 
-        # ---- save / cancel
-        brow = ttk.Frame(f)
-        brow.grid(row=r, sticky="e")
+        # ---- save / cancel (always visible)
+        bar = self.bar = ttk.Frame(root, padding=(18, 10, 18, 14))
+        bar.grid(row=1, column=0, columnspan=2, sticky="we")
+        bar.columnconfigure(0, weight=1)
+        brow = ttk.Frame(bar)
+        brow.grid(row=0, column=0, sticky="e")
         ttk.Button(brow, text="Cancel", command=self._cancel).grid(row=0, column=0, padx=8)
         self.save_btn = ttk.Button(brow, text="Save", command=self._save)
         self.save_btn.grid(row=0, column=1)
@@ -253,6 +290,68 @@ class SetupWindow:
         root.protocol("WM_DELETE_WINDOW", self._cancel)
         root.bind("<FocusIn>", lambda e: self._refresh())   # e.g. after installing
         self._refresh()
+        root.update_idletasks()
+        self._fit()
+        root.deiconify()
+
+    # ---- size and scrolling
+
+    def _needed_size(self):
+        return (self.content.winfo_reqwidth() + self.scrollbar.winfo_reqwidth(),
+                self.content.winfo_reqheight() + self.bar.winfo_reqheight())
+
+    def _work_area(self):
+        """The usable part of the monitor the mouse is on (without taskbar/panels)."""
+        root = self.root
+        try:
+            area = plat.work_area(*root.winfo_pointerxy())
+        except Exception:
+            area = None
+        if not area or area[2] < 200 or area[3] < 200:
+            # Unknown: the whole screen, leaving room for a taskbar
+            area = (0, 0, root.winfo_screenwidth(), root.winfo_screenheight() - 80)
+        return area
+
+    def _fit(self):
+        need_w, need_h = self._needed_size()
+        area = self._work_area()
+        w, h, x, y = fit_window(need_w, need_h, area)
+        self.root.minsize(min(MIN_W, w), min(MIN_H, h))
+        self.root.maxsize(area[2] - DECOR_W, area[3] - DECOR_H)
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        self.fitted_need = need_h
+
+    def _content_changed(self):
+        self.canvas.configure(scrollregion=(0, 0, self.content.winfo_reqwidth(),
+                                            self.content.winfo_reqheight()))
+        self._update_scrollbar()
+        # Content grew (an update was found, a warning appeared): grow the window to show it,
+        # still within the screen. It never shrinks on its own.
+        if self.fitted_need is not None:
+            need_h = self._needed_size()[1]
+            if need_h > self.fitted_need and self.root.winfo_height() < need_h:
+                self._fit()
+
+    def _scrolls(self):
+        return self.content.winfo_reqheight() > self.canvas.winfo_height() + 1
+
+    def _update_scrollbar(self):
+        if self._scrolls():
+            self.scrollbar.grid()
+        else:
+            self.scrollbar.grid_remove()
+            self.canvas.yview_moveto(0)
+
+    def _wheel(self, event):
+        if not self._scrolls():
+            return
+        if getattr(event, "num", None) == 4:
+            step = -1
+        elif getattr(event, "num", None) == 5:
+            step = 1
+        else:
+            step = -1 if event.delta > 0 else 1
+        self.canvas.yview_scroll(step * 3, "units")
 
     # ---- state
 

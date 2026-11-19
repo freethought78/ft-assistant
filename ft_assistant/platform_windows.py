@@ -405,6 +405,29 @@ def notify_with_action(msg, action_label, on_click, title="FT Assistant"):
 
 # ---------------------------------------------------------------- processes and locking
 
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+
+def work_area(x, y):
+    """(left, top, width, height) of the usable part of the monitor at x, y: without the
+    taskbar, wherever it is docked. None if unknown."""
+    try:
+        user32.MonitorFromPoint.restype = wintypes.HANDLE
+        user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+        user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+        mon = user32.MonitorFromPoint(wintypes.POINT(int(x), int(y)), 2)   # 2 = the nearest
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
+            return None
+        r = info.rcWork
+        return (r.left, r.top, r.right - r.left, r.bottom - r.top)
+    except Exception:
+        return None
+
+
 def lock_single_instance(path):
     import msvcrt
     f = open(path, "a+")
