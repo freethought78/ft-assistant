@@ -96,8 +96,50 @@ def last_conversation(harness_key, folder):
     return None
 
 
-def find_exe(h):
-    return shutil.which(h.exe)
+def _node_version(bin_dir):
+    """Sort key for an nvm folder like ~/.nvm/versions/node/v24.19.0/bin (newest first)."""
+    nums = re.findall(r"\d+", bin_dir.parent.name)
+    return tuple(int(n) for n in nums)
+
+
+def install_dirs(home=None, env=None, windows=sys.platform == "win32"):
+    """Usual places Claude Code and OpenCode get installed to. An app started at login often
+    can't see them: shells add them to the search path in their start-up files (nvm, for
+    example, does it in ~/.bashrc), which the desktop never reads."""
+    env = os.environ if env is None else env
+    home = Path(home or Path.home())
+    dirs = [home / ".local" / "bin", home / ".claude" / "local", home / ".opencode" / "bin"]
+    if windows:
+        dirs.append(Path(env.get("APPDATA") or home / "AppData" / "Roaming") / "npm")
+    else:
+        dirs += [home / ".npm-global" / "bin", home / ".volta" / "bin", home / ".bun" / "bin",
+                 home / ".asdf" / "shims"]
+        nvm = Path(env.get("NVM_DIR") or home / ".nvm") / "versions" / "node"
+        dirs += sorted(nvm.glob("*/bin"), key=_node_version, reverse=True)
+    return dirs
+
+
+def find_exe(h, which=shutil.which, dirs=None):
+    """Full path of the harness's program: from the search path, else from the usual install
+    places. None if it isn't installed."""
+    found = which(h.exe)
+    if found:
+        return found
+    for d in install_dirs() if dirs is None else dirs:
+        found = which(h.exe, path=str(d))
+        if found:
+            return found
+    return None
+
+
+def with_dir_on_path(env, folder):
+    """`env` with `folder` at the front of PATH (so a program found outside the search path also
+    finds its helpers, such as nvm's node next to it)."""
+    env = dict(env)
+    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p]
+    if str(folder) not in parts:
+        env["PATH"] = os.pathsep.join([str(folder)] + parts)
+    return env
 
 
 def terminal_command(argv, folder, which=shutil.which, windows=sys.platform == "win32"):
@@ -134,12 +176,16 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
     """Open a visible terminal window with the chosen harness in the neutral folder,
     continuing the last conversation there (one ongoing conversation, no build-up)."""
     h = HARNESSES[harness_key]
-    if not find_exe(h):
+    exe = find_exe(h)
+    if not exe:
         raise RuntimeError(f"{h.name} isn't installed. Say \"Assistant setup\" to install it.")
     folder = config.sessions_dir()
     folder.mkdir(parents=True, exist_ok=True)
     resume = last_conversation(harness_key, folder)
-    cmd = terminal_command(h.argv(folder, prompt, resume), folder)
-    launcher(cmd, cwd=str(folder), env=clean_env(), stdin=subprocess.DEVNULL,
+    argv = h.argv(folder, prompt, resume)
+    argv[0] = exe              # the full path: the terminal may not find it on its own
+    cmd = terminal_command(argv, folder)
+    env = with_dir_on_path(clean_env(), Path(exe).parent)
+    launcher(cmd, cwd=str(folder), env=env, stdin=subprocess.DEVNULL,
              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **new_window_kwargs(cmd))
     return h
