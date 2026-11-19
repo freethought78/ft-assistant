@@ -95,9 +95,7 @@ python3 installer/build.py
   system-specific parts).
 - `installer/`: the setup file template and the installer it embeds.
 - `docs/design-notes.md`: the design, decisions and test results.
-- `dictate.py`, `whisper_worker.py`, `run.sh`, `deploy.sh`, `vocabulary.txt` and `autostart/` at
-  the top level belong to the older tool FT Assistant replaced. They're kept until it's retired
-  and aren't part of the program or the setup file.
+- `tests/`: the unit tests.
 
 ## License
 
