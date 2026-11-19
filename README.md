@@ -12,8 +12,8 @@ AI coding assistant.
   [OpenCode](https://opencode.ai). It opens in a normal terminal window, so you can always see what
   it's doing and keep talking to it. Nothing runs hidden in the background.
 
-> **Status:** in development. There's no release yet; the first one is being prepared. The `main`
-> branch holds the version in daily use today, and `next` holds the redesign described here.
+> **Status:** early releases, in daily use and being tested by a few people. The `main` branch
+> holds the released version, and `next` holds work for the next release.
 
 ## Features
 
@@ -41,7 +41,8 @@ AI coding assistant.
 
 ## Install
 
-When the first release is out, download `FT-Assistant-setup.cmd` from the Releases page, then:
+Download `FT-Assistant-setup.cmd` from the
+[latest release](https://github.com/freethought78/ft-assistant/releases/latest), then:
 
 - **Windows:** double-click it.
 - **Linux:** run `bash FT-Assistant-setup.cmd` in a terminal.
@@ -50,6 +51,10 @@ Setup checks your computer, shows exactly what it will download and how big it i
 you before downloading anything. On Linux it can install the few system packages it needs
 (`xdotool`, `libnotify`, `portaudio`, and `python3-tk` for clear text) after asking for your
 password.
+
+**Updating or repairing:** the setup screen checks for updates by itself. You can also run the
+newest setup file again at any time: it finds your existing install, offers to update it in the
+same folder, and keeps your settings, the speech model and anything already downloaded.
 
 ## Using it
 

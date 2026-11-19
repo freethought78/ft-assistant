@@ -107,6 +107,19 @@ GPU_LIBS=pip
 if [ "$GPU" = "yes" ] && ldconfig -p 2>/dev/null | grep -q 'libcublas\.so\.12' \
      && ldconfig -p 2>/dev/null | grep -q 'libcudnn\.so\.9'; then GPU_LIBS=system; fi
 DEFAULT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ft-assistant"
+existing_install() {   # an existing install's folder, from the menu or login entry it made
+  local f d
+  for f in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/ft-assistant.desktop" \
+           "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/ft-assistant.desktop"; do
+    [ -f "$f" ] || continue
+    d=$(sed -n 's|^Exec="\{0,1\}\(.*\)/ft-assistant"\{0,1\}$|\1|p' "$f" | head -n 1)
+    [ -n "$d" ] && [ -f "$d/install.json" ] && { echo "$d"; return 0; }
+  done
+  [ -f "$DEFAULT_DIR/install.json" ] && echo "$DEFAULT_DIR"
+  return 0
+}
+EXISTING_DIR="$(existing_install)"
+[ -n "$EXISTING_DIR" ] && DEFAULT_DIR="$EXISTING_DIR"   # updating: offer the same folder
 DIR="${FT_SETUP_DIR:-}"
 model_on_computer() {    # same places install.py looks (Hugging Face cache, earlier tool, install dir)
   local d
@@ -149,7 +162,11 @@ say ""
 NEED_KB=$(( (DISK_MB + 300) * 1000 ))
 
 if [ -z "$DIR" ]; then
-  read -r -p "Install to $DEFAULT_DIR? Press Enter, or type another folder: " DIR
+  if [ -n "$EXISTING_DIR" ]; then
+    read -r -p "FT Assistant is installed in $DEFAULT_DIR. Press Enter to update it there, or type another folder: " DIR
+  else
+    read -r -p "Install to $DEFAULT_DIR? Press Enter, or type another folder: " DIR
+  fi
 fi
 DIR="${DIR:-$DEFAULT_DIR}"
 DIR="${DIR/#\~/$HOME}"
@@ -221,6 +238,18 @@ try {
 if ($env:FT_SETUP_GPU -in @('yes', 'no')) { $gpu = $env:FT_SETUP_GPU }   # testing hook (Wine has no CUDA)
 $model = if ($gpu -eq 'yes') { 'large-v3-turbo' } else { 'small.en' }
 $default = Join-Path $env:LOCALAPPDATA 'FT Assistant'
+# Updating: offer the folder FT Assistant is already installed in (recorded in its uninstall
+# entry since 0.1.0), so pressing Enter updates it rather than making a second install.
+function Find-ExistingInstall {
+  try {
+    $loc = (Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FTAssistant' -ErrorAction Stop).InstallLocation
+    if ($loc -and (Test-Path -LiteralPath (Join-Path $loc 'install.json'))) { return $loc }
+  } catch { }
+  if (Test-Path -LiteralPath (Join-Path $default 'install.json')) { return $default }
+  return $null
+}
+$existing = Find-ExistingInstall
+if ($existing) { $default = $existing }
 
 # ---- reuse what's already on this computer before downloading anything
 function Find-SystemPython {
@@ -291,7 +320,10 @@ Say '  If you then install Claude Code or OpenCode from the setup window: about 
 Say ''
 
 $dir = $env:FT_SETUP_DIR
-if (-not $dir) { $dir = Read-Host "Install to ${default}? Press Enter, or type another folder" }
+if (-not $dir) {
+  if ($existing) { $dir = Read-Host "FT Assistant is installed in ${default}. Press Enter to update it there, or type another folder" }
+  else { $dir = Read-Host "Install to ${default}? Press Enter, or type another folder" }
+}
 if (-not $dir) { $dir = $default }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $dir = (Resolve-Path $dir).Path
