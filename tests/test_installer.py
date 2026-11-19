@@ -178,6 +178,58 @@ class Installer(unittest.TestCase):
                 inst.main(["install", "--dir", str(self.dir), "--gpu", "no", "--no-start"])
         self.assertEqual(cm.exception.code, 3)
 
+    def test_system_python_without_windows_falls_back(self):
+        # e.g. python.org Python installed without "tcl/tk": setup must switch to a downloaded
+        # Python (exit code 3) before downloading anything, not install a broken setup screen.
+        with mock.patch.object(inst, "can_draw_windows", return_value=False), \
+                mock.patch.object(inst, "install_packages") as pkgs, \
+                mock.patch.object(inst, "stop_running_app"):
+            with self.assertRaises(SystemExit) as cm:
+                inst.main(["install", "--dir", str(self.dir), "--gpu", "no", "--no-start",
+                           "--python-source", "system"])
+        self.assertEqual(cm.exception.code, 3)
+        pkgs.assert_not_called()
+
+    def test_window_test_runs_the_given_python(self):
+        ok = mock.Mock(returncode=0)
+        with mock.patch.object(inst.subprocess, "run", return_value=ok) as run:
+            self.assertTrue(inst.can_draw_windows("/x/python"))
+        argv = run.call_args[0][0]
+        self.assertEqual(argv[0], "/x/python")
+        self.assertIn("tkinter.Tk()", argv[2])
+        with mock.patch.object(inst.subprocess, "run", return_value=mock.Mock(returncode=1)):
+            self.assertFalse(inst.can_draw_windows("/x/python"))
+        self.assertFalse(inst.can_draw_windows(self.dir / "no-such-python"))
+
+    def _lock(self, pid):
+        d = Path(os.environ["XDG_CONFIG_HOME"]) / "ft-assistant"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / ".lock").write_text(str(pid))
+
+    def test_stale_lock_never_stops_another_program(self):
+        # The lock still holds the id of an FT Assistant that has since exited, now reused by
+        # some other program: it must be left alone.
+        other = subprocess.Popen(["sleep", "30"])
+        try:
+            self._lock(other.pid)
+            inst.stop_running_app()
+            self.assertIsNone(other.poll())
+        finally:
+            other.kill(); other.wait()
+
+    def test_running_app_is_stopped(self):
+        self._lock(4242)
+        with mock.patch.object(inst, "is_ft_assistant", return_value=True), \
+                mock.patch.object(inst.os, "kill") as kill, mock.patch.object(inst.time, "sleep"):
+            inst.stop_running_app()
+        kill.assert_called_once_with(4242, 15)
+
+    def test_app_recognised_by_command_line(self):
+        self.assertTrue(inst.APP_CMDLINE_RE.search("/x/python3 -m ft_assistant"))
+        self.assertTrue(inst.APP_CMDLINE_RE.search('"C:\\x\\pythonw.exe" -m ft_assistant '))
+        self.assertFalse(inst.APP_CMDLINE_RE.search("/x/python3 -m ft_assistant.setup_ui"))
+        self.assertFalse(inst.APP_CMDLINE_RE.search("sleep 30"))
+
     def test_uninstall_removes_everything_it_made(self):
         launchers = inst.write_launchers(self.dir, gpu=False, model="small.en")
         shortcuts = inst.write_shortcuts(launchers)
@@ -201,6 +253,12 @@ class Installer(unittest.TestCase):
 
 
 class SetupFile(unittest.TestCase):
+    def test_windows_python_check_needs_windows(self):
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        probe = [l for l in text.splitlines() if "import sys, venv, ensurepip" in l]
+        self.assertEqual(len(probe), 1)
+        self.assertIn("tkinter.Tk()", probe[0])
+
     def test_built_file(self):
         spec_b = importlib.util.spec_from_file_location("ft_build", REPO / "installer" / "build.py")
         build = importlib.util.module_from_spec(spec_b)
