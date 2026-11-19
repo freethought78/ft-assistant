@@ -14,8 +14,8 @@ Only the standard library is used here. Everything is per-user; no admin rights 
 Reuse before download: <install dir>/python may be a venv made from the computer's own Python
 (the setup script prefers that) or a downloaded standalone Python; NVIDIA libraries already
 installed system-wide are used instead of pip copies (--gpu-libs system); a Whisper model that
-is already on the computer (shared Hugging Face cache, or the earlier voice-dictation tool) is
-hard-linked instead of downloaded, so it takes no extra disk space.
+is already on the computer (shared Hugging Face cache) is hard-linked instead of downloaded, so
+it takes no extra disk space.
 
 Testing hooks (environment):
   FT_ASSISTANT_SOURCE        local folder or zip with the app code (instead of GitHub)
@@ -225,8 +225,6 @@ def model_search_dirs():
     if os.environ.get("HF_HOME"):
         dirs.append(Path(os.environ["HF_HOME"]) / "hub")
     dirs.append(home() / ".cache" / "huggingface" / "hub")
-    if not IS_WINDOWS:
-        dirs.append(home() / ".local" / "share" / "voice-dictation" / "models")   # earlier tool
     return dirs
 
 

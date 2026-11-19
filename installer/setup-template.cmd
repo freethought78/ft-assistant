@@ -121,10 +121,10 @@ existing_install() {   # an existing install's folder, from the menu or login en
 EXISTING_DIR="$(existing_install)"
 [ -n "$EXISTING_DIR" ] && DEFAULT_DIR="$EXISTING_DIR"   # updating: offer the same folder
 DIR="${FT_SETUP_DIR:-}"
-model_on_computer() {    # same places install.py looks (Hugging Face cache, earlier tool, install dir)
+model_on_computer() {    # same places install.py looks (Hugging Face cache, install dir)
   local d
   for d in "${FT_ASSISTANT_MODEL_SOURCE:-}" "${HF_HUB_CACHE:-}" "${HF_HOME:+$HF_HOME/hub}" \
-           "$HOME/.cache/huggingface/hub" "$HOME/.local/share/voice-dictation/models" "${1:-}/models"; do
+           "$HOME/.cache/huggingface/hub" "${1:-}/models"; do
     [ -n "$d" ] && compgen -G "$d/models--*--faster-whisper-$MODEL/snapshots/*/model.bin" >/dev/null && return 0
   done
   [ -s "${1:-}/models/$MODEL/model.bin" ] && return 0
