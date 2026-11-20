@@ -185,3 +185,89 @@ class Settings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstallingAnAssistant(unittest.TestCase):
+    def test_linux_uses_each_projects_install_script(self):
+        _, cmd = harness.install_plan("claude", windows=False)
+        self.assertEqual(cmd, "curl -fsSL https://claude.ai/install.sh | bash")
+        _, cmd = harness.install_plan("opencode", windows=False)
+        self.assertEqual(cmd, "curl -fsSL https://opencode.ai/install | bash")
+        which = lambda n: "/usr/bin/gnome-terminal" if n == "gnome-terminal" else None  # noqa: E731
+        argv = harness.install_window_command("opencode", "Assistant", windows=False, which=which)
+        self.assertEqual(argv[:3], ["gnome-terminal", argv[1], "--"])
+        self.assertIn("opencode.ai/install", argv[-1])
+        self.assertIn("Press Enter to close", argv[-1])
+
+    def test_windows_picks_the_right_opencode_build(self):
+        self.assertEqual(harness.opencode_windows_asset("AMD64", avx2=True), "opencode-windows-x64.zip")
+        self.assertEqual(harness.opencode_windows_asset("AMD64", avx2=False),
+                         "opencode-windows-x64-baseline.zip")
+        self.assertEqual(harness.opencode_windows_asset("ARM64"), "opencode-windows-arm64.zip")
+
+    def test_windows_opencode_needs_no_npm_and_no_website(self):
+        with mock.patch.object(harness, "_has_avx2", return_value=True):
+            source, script = harness.install_plan("opencode", windows=True)
+            argv = harness.install_window_command("opencode", "Assistant", windows=True)
+        url = harness.OPENCODE_DOWNLOAD + "opencode-windows-x64.zip"
+        self.assertIn(url, source)
+        self.assertNotIn("npm", script)
+        self.assertEqual(argv[:6], ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                    "-NoExit", "-EncodedCommand"])
+        import base64
+        ps = base64.b64decode(argv[6]).decode("utf-16-le")
+        self.assertIn(f"'{url}'", ps)
+        self.assertIn(".opencode\\bin", ps)
+        self.assertIn("Expand-Archive", ps)
+        self.assertIn("choose OpenCode and click Save", ps)
+
+    def test_windows_claude_uses_its_own_installer(self):
+        _, cmd = harness.install_plan("claude", windows=True)
+        self.assertEqual(cmd, "irm https://claude.ai/install.ps1 | iex")
+
+
+try:
+    import tkinter  # noqa: F401
+    from ft_assistant import setup_ui
+except ImportError:
+    setup_ui = None
+
+
+@unittest.skipIf(setup_ui is None, "tkinter isn't installed")
+class WatchingAnInstall(unittest.TestCase):
+    def fake_screen(self, chosen=""):
+        from types import SimpleNamespace
+        scheduled = []
+        var = SimpleNamespace(value=chosen)
+        var.get = lambda: var.value
+        var.set = lambda v: setattr(var, "value", v)
+        screen = SimpleNamespace(installing={"opencode": 10 ** 12}, harness_var=var,
+                                 root=SimpleNamespace(after=lambda ms, f: scheduled.append(ms)),
+                                 _refresh=lambda: None)
+        screen._watch_installs = lambda: setup_ui.SetupWindow._watch_installs(screen)
+        return screen, scheduled
+
+    def test_keeps_watching_until_it_turns_up_then_picks_it(self):
+        screen, scheduled = self.fake_screen()
+        with mock.patch.object(harness, "find_exe", return_value=None):
+            screen._watch_installs()
+        self.assertEqual(scheduled, [2000])                  # still waiting
+        with mock.patch.object(harness, "find_exe", return_value="/x/opencode"):
+            screen._watch_installs()
+        self.assertEqual(screen.installing, {})
+        self.assertEqual(screen.harness_var.get(), "opencode")
+        self.assertEqual(scheduled, [2000])                  # stopped watching
+
+    def test_never_overrides_an_existing_choice(self):
+        screen, _ = self.fake_screen(chosen="claude")
+        with mock.patch.object(harness, "find_exe", return_value="/x/opencode"):
+            screen._watch_installs()
+        self.assertEqual(screen.harness_var.get(), "claude")
+
+    def test_gives_up_after_the_time_limit(self):
+        screen, scheduled = self.fake_screen()
+        screen.installing["opencode"] = 0
+        with mock.patch.object(harness, "find_exe", return_value=None):
+            screen._watch_installs()
+        self.assertEqual(screen.installing, {})
+        self.assertEqual(scheduled, [])
