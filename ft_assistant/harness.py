@@ -3,7 +3,9 @@
 Nothing here ever runs an agent in the background: every session is a normal, visible,
 interactive terminal window the user can watch and talk to."""
 
+import base64
 import os
+import platform
 import re
 import shutil
 import sqlite3
@@ -189,3 +191,106 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
     launcher(cmd, cwd=str(folder), env=env, stdin=subprocess.DEVNULL,
              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **new_window_kwargs(cmd))
     return h
+
+
+# ---------------------------------------------------------------- installing an assistant
+# Always the latest version from the official source, run in a visible window after the user
+# agrees. Linux: each project's own install script. Windows: Claude Code's own PowerShell
+# installer; OpenCode has none (its script needs bash), so its latest Windows build is
+# downloaded from its GitHub releases into the same folder its script uses (~/.opencode/bin).
+
+LINUX_INSTALL = {
+    "claude": "curl -fsSL https://claude.ai/install.sh | bash",
+    "opencode": "curl -fsSL https://opencode.ai/install | bash",
+}
+CLAUDE_WINDOWS_INSTALL = "irm https://claude.ai/install.ps1 | iex"
+OPENCODE_DOWNLOAD = "https://github.com/anomalyco/opencode/releases/latest/download/"
+INSTALL_SIZES = {"claude": "about 350 MB", "opencode": "about 80 MB to download, 210 MB installed"}
+SIGN_IN = {"claude": "Next: in the FT Assistant setup window, choose Claude Code and click Save. "
+                     "Then say \"{word}, hello\" to sign in with your Claude account.",
+           "opencode": "Next: in the FT Assistant setup window, choose OpenCode and click Save. "
+                       "Then say \"{word}, hello\" to start it."}
+
+
+def _has_avx2():
+    """Windows: whether the processor has AVX2 (OpenCode's normal build needs it)."""
+    try:
+        import ctypes
+        return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(40))
+    except Exception:
+        return False
+
+
+def opencode_windows_asset(machine=None, avx2=None):
+    """Which OpenCode Windows build fits this computer (the same choice its install script makes)."""
+    m = (machine or platform.machine()).lower()
+    if m in ("arm64", "aarch64"):
+        return "opencode-windows-arm64.zip"
+    if avx2 is None:
+        avx2 = _has_avx2()
+    return "opencode-windows-x64.zip" if avx2 else "opencode-windows-x64-baseline.zip"
+
+
+def _ps_quote(s):
+    return "'" + s.replace("'", "''") + "'"
+
+
+def opencode_windows_script(url):
+    """PowerShell that installs OpenCode's Windows build from `url` into ~/.opencode/bin and adds
+    that folder to the user's PATH (so `opencode` also works in a new terminal)."""
+    return "\n".join([
+        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'",
+        "try {",
+        "  $dir = Join-Path $env:USERPROFILE '.opencode\\bin'",
+        "  $zip = Join-Path $env:TEMP 'opencode-download.zip'",
+        "  Write-Host 'Downloading the latest OpenCode (about 80 MB)...'",
+        "  if (Get-Command curl.exe -ErrorAction SilentlyContinue) {",
+        f"    & curl.exe -fL --progress-bar -o $zip {_ps_quote(url)}",
+        "    if ($LASTEXITCODE -ne 0) { throw 'the download failed' }",
+        "  } else {",
+        f"    Invoke-WebRequest -UseBasicParsing -Uri {_ps_quote(url)} -OutFile $zip",
+        "  }",
+        "  New-Item -ItemType Directory -Force -Path $dir | Out-Null",
+        "  Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force",
+        "  Remove-Item -LiteralPath $zip -Force",
+        "  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')",
+        "  if (-not (@($userPath -split ';') -contains $dir)) {",
+        "    $new = if ($userPath) { $userPath.TrimEnd(';') + ';' + $dir } else { $dir }",
+        "    [Environment]::SetEnvironmentVariable('Path', $new, 'User')",
+        "  }",
+        "  & (Join-Path $dir 'opencode.exe') --version",
+        "  Write-Host \"OpenCode is installed in $dir\"",
+        "} catch {",
+        "  Write-Host ''",
+        "  Write-Host \"Installing OpenCode failed: $($_.Exception.Message)\"",
+        "}",
+    ])
+
+
+def install_plan(key, windows=sys.platform == "win32"):
+    """(where it comes from, for the confirmation question; the command run in its window)."""
+    if not windows:
+        return f"its official install script:\n\n{LINUX_INSTALL[key]}", LINUX_INSTALL[key]
+    if key == "claude":
+        return f"its official installer:\n\n{CLAUDE_WINDOWS_INSTALL}", CLAUDE_WINDOWS_INSTALL
+    url = OPENCODE_DOWNLOAD + opencode_windows_asset()
+    return (f"its latest official Windows release:\n\n{url}\n\ninto your user folder "
+            "(.opencode\\bin)", opencode_windows_script(url))
+
+
+def install_window_command(key, word, windows=sys.platform == "win32", which=shutil.which):
+    """The command that opens a visible window installing `key`, ending with what to do next."""
+    _, cmd = install_plan(key, windows)
+    nxt = SIGN_IN[key].format(word=word)
+    if windows:
+        ps = f"{cmd}\nWrite-Host ''\nWrite-Host {_ps_quote(nxt)}"
+        enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+        return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit",
+                "-EncodedCommand", enc]
+    script = (f"{cmd}; echo; echo {_sh_quote(nxt)}; echo; "
+              "read -p 'Press Enter to close this window. '")
+    return terminal_command(["bash", "-lc", script], str(config.sessions_dir().parent), which=which)
+
+
+def _sh_quote(s):
+    return "'" + s.replace("'", "'\\''") + "'"

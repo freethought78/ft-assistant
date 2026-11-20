@@ -32,7 +32,8 @@ AI coding assistant.
 - **Small setup file** that downloads only what's missing, and reuses what's already on your
   computer (Python, NVIDIA libraries, an existing Whisper model) to save downloads and disk space.
 - **Setup screen** (hold your key and say "Assistant setup") to pick the assistant, change the key,
-  check for updates or uninstall.
+  check for updates or uninstall. If the assistant isn't installed yet, its Install button gets
+  the latest version from the official source, and the screen notices when it's done.
 - **Update notices:** when a new version is out, a notification offers it. Updates are never
   installed without asking.
 

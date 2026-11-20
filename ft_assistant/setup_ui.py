@@ -4,7 +4,6 @@ Run as its own process (python -m ft_assistant.setup_ui) so the main app keeps r
 Exit code 10 means settings were saved and changed; 0 means nothing changed."""
 
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -20,18 +19,8 @@ from . import plat
 CHANGED = 10
 CAPTURE_SECONDS = 15
 
-# Official install commands, run in a visible terminal only after the user agrees.
 IS_WINDOWS = sys.platform == "win32"
-INSTALL_COMMANDS = {
-    "claude": "curl -fsSL https://claude.ai/install.sh | bash",
-    "opencode": "curl -fsSL https://opencode.ai/install | bash",
-}
-if IS_WINDOWS:                       # PowerShell commands, run in a new console window
-    INSTALL_COMMANDS = {
-        "claude": "irm https://claude.ai/install.ps1 | iex",
-        "opencode": "npm install -g opencode-ai",
-    }
-INSTALL_SIZES = {"claude": "about 350 MB", "opencode": "about 400 MB"}
+INSTALL_WATCH_SECONDS = 30 * 60   # how long the screen watches for an install to finish
 
 PRIVACY_NOTE_DICTATION_ONLY = ("Everything stays on this computer: nothing you say is sent "
                                "anywhere.")
@@ -150,6 +139,7 @@ class SetupWindow:
         self.first_run = first_run
         self.capture_q = queue.Queue()
         self.capturing = False
+        self.installing = {}           # assistant key -> when to stop watching for it
 
         root.withdraw()                 # shown once it's sized to fit the screen
         root.title("FT Assistant setup")
@@ -375,8 +365,12 @@ class SetupWindow:
         self.key_label.configure(text=f"Current Assistant key: {name}")
         for key, h in harness.HARNESSES.items():
             installed = harness.find_exe(h) is not None
-            self.status[key].configure(text="Installed" if installed else "Not installed")
             if installed:
+                self.installing.pop(key, None)
+            self.status[key].configure(text="Installed" if installed else
+                                       "Installing..." if key in self.installing else
+                                       "Not installed")
+            if installed or key in self.installing:
                 self.install_btn[key].grid_remove()
             else:
                 self.install_btn[key].grid()
@@ -390,27 +384,43 @@ class SetupWindow:
 
     def _install(self, key):
         h = harness.HARNESSES[key]
-        cmd = INSTALL_COMMANDS[key]
+        source, _ = harness.install_plan(key)
         if not messagebox.askyesno(
                 "Install " + h.name,
-                f"This opens a terminal window that downloads and installs {h.name} from its "
-                f"official website ({INSTALL_SIZES[key]}):\n\n{cmd}\n\nContinue?", parent=self.root):
+                f"This opens a window that downloads and installs the latest {h.name} "
+                f"({harness.INSTALL_SIZES[key]}) from {source}\n\nThis screen notices by itself "
+                "when it's done.\n\nContinue?", parent=self.root):
             return
-        signin = ("Next: run  claude  once to sign in with your Claude account." if key == "claude"
-                  else "Done.")
-        if IS_WINDOWS:
-            if key == "opencode" and not shutil.which("npm"):
-                webbrowser.open("https://opencode.ai/download")
-                return
-            ps = f"{cmd}; Write-Host ''; Write-Host '{signin}'"
-            subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-NoExit",
-                              "-Command", ps], env=harness.clean_env(), creationflags=0x10)
+        word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
+        argv = harness.install_window_command(key, word)
+        try:
+            if IS_WINDOWS:
+                subprocess.Popen(argv, env=harness.clean_env(), creationflags=0x10)  # new console
+            else:
+                subprocess.Popen(argv, env=harness.clean_env(), start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        except OSError as e:
+            messagebox.showerror("Install " + h.name, f"Couldn't open the install window ({e}).",
+                                 parent=self.root)
             return
-        script = f"{cmd}; echo; echo '{signin}'; echo; read -p 'Press Enter to close this window. '"
-        argv = harness.terminal_command(["bash", "-lc", script], str(config.sessions_dir().parent))
-        subprocess.Popen(argv, env=harness.clean_env(), start_new_session=True,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+        self.installing[key] = time.time() + INSTALL_WATCH_SECONDS
+        self._refresh()
+        self.root.after(2000, self._watch_installs)
+
+    def _watch_installs(self):
+        """Every 2 seconds while an install window may still be working: once the assistant
+        turns up, show it as installed and pick it if nothing is chosen yet."""
+        for key in list(self.installing):
+            if harness.find_exe(harness.HARNESSES[key]):
+                self.installing.pop(key)
+                if self.harness_var.get() not in config.CHOICES:
+                    self.harness_var.set(key)
+            elif time.time() > self.installing[key]:
+                self.installing.pop(key)          # gave up waiting: offer the button again
+        self._refresh()
+        if self.installing:
+            self.root.after(2000, self._watch_installs)
 
     # ---- capturing a new Assistant key
 
