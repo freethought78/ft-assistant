@@ -357,7 +357,8 @@ low-level keyboard/mouse hooks that **swallow** the key (it never reaches other 
 Lock never toggles), typing with `SendInput` (Unicode, Enter for new lines), focused-window and
 terminal detection (Windows Terminal, console), toasts through Windows PowerShell, key capture,
 single-instance lock. `ft_assistant/plat.py` picks the Linux or Windows layer. Agents open in
-Windows Terminal (`wt`), else a new console. The installer registers FT Assistant under
+a new console window (Windows Terminal when it's the default terminal); never through `wt.exe`,
+which re-parses the command line and broke folder names with spaces (0.2.7). The installer registers FT Assistant under
 Settings -> Apps and finishes deleting itself after uninstall exits.
 
 **Decided by the user (2026-11-18):**

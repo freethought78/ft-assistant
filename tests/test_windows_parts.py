@@ -1,4 +1,5 @@
 """The Windows layer's pure parts, tested on Linux (the rest is tested in the Bottles bottle)."""
+import subprocess
 import unittest
 
 from ft_assistant import harness
@@ -57,12 +58,18 @@ class Typing(unittest.TestCase):
 
 
 class WindowsTerminal(unittest.TestCase):
-    def test_windows_terminal(self):
-        which = {"wt": r"C:\wt.exe", "claude": r"C:\Users\u\.local\bin\claude.exe"}.get
-        cmd = harness.terminal_command(["claude", "fix it; then test"], r"C:\S", which=which,
-                                       windows=True)
-        self.assertEqual(cmd, ["wt", "-d", r"C:\S", r"C:\Users\u\.local\bin\claude.exe",
-                               "fix it\; then test"])
+    def test_never_through_wt(self):
+        # wt.exe re-parses its command line: it drops the quotes around a folder with spaces and
+        # splits on ";". The program is started directly instead, arguments untouched.
+        which = {"wt": r"C:\wt.exe", "opencode": r"C:\Users\u\.opencode\bin\opencode.exe"}.get
+        folder = r"C:\Users\u\FT Assistant sessions"
+        cmd = harness.terminal_command(["opencode", folder, "--prompt", "fix it; then test"],
+                                       folder, which=which, windows=True)
+        self.assertEqual(cmd, [r"C:\Users\u\.opencode\bin\opencode.exe", folder, "--prompt",
+                               "fix it; then test"])
+        self.assertEqual(subprocess.list2cmdline(cmd),
+                         r'C:\Users\u\.opencode\bin\opencode.exe "C:\Users\u\FT Assistant sessions" '
+                         r'--prompt "fix it; then test"')
 
     def test_plain_console(self):
         which = {"opencode": r"C:\npm\opencode.cmd"}.get

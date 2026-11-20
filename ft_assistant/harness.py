@@ -147,14 +147,14 @@ def with_dir_on_path(env, folder):
 def terminal_command(argv, folder, which=shutil.which, windows=sys.platform == "win32"):
     """Wrap `argv` so it runs in a new window of the system's default terminal.
 
-    Windows: Windows Terminal (wt) if installed, else the program itself in a new console
-    window (see new_window_flags)."""
+    Windows: the program itself, started in a new console window (see new_window_kwargs).
+    Windows 11 shows that in Windows Terminal when it's the default terminal, with the
+    arguments untouched. (Starting it through wt.exe instead broke them: wt re-parses its
+    command line, dropping the quotes around "FT Assistant sessions" and splitting on ";", so
+    OpenCode got a folder that didn't exist and closed at once.)"""
     if windows:
-        exe = which(argv[0]) or argv[0]       # full path (claude.exe / opencode.cmd)
-        if which("wt"):
-            # wt treats ";" as "next command"; "\;" is a literal semicolon.
-            return ["wt", "-d", str(folder), exe] + [a.replace(";", "\\;") for a in argv[1:]]
-        return [exe] + argv[1:]
+        exe = which(argv[0]) or argv[0]       # full path (claude.exe / opencode.exe)
+        return [exe] + list(argv[1:])
     if which("gnome-terminal"):
         return ["gnome-terminal", f"--working-directory={folder}", "--"] + argv
     for term in ("x-terminal-emulator", "xfce4-terminal", "konsole", "mate-terminal",
@@ -169,9 +169,8 @@ def new_window_kwargs(cmd):
     """subprocess.Popen options so the command gets its own visible window and outlives us."""
     if sys.platform != "win32":
         return {"start_new_session": True}
-    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW = 0x10, 0x08000000
-    # wt opens its own window; anything else needs a new console window.
-    return {"creationflags": CREATE_NO_WINDOW if cmd[0] == "wt" else CREATE_NEW_CONSOLE}
+    CREATE_NEW_CONSOLE = 0x10
+    return {"creationflags": CREATE_NEW_CONSOLE}
 
 
 def open_session(harness_key, prompt, launcher=subprocess.Popen):
