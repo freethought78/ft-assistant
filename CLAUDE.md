@@ -16,7 +16,7 @@ everyone else gets:
 
 | Path | What |
 |---|---|
-| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-setup`, `ft-assistant-uninstall`, `install.py`, `install.json`. |
+| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-settings` (called `ft-assistant-setup` before 0.2.5), `ft-assistant-uninstall`, `install.py`, `install.json`. |
 | `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (**errors only** plus a start-up line since 0.2.0; never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 

@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -91,6 +92,54 @@ class Installer(unittest.TestCase):
         self.assertTrue((self.dir / "app" / "ft_assistant" / "old.py").exists())
         self.assertEqual((self.dir / "install.py").read_text(), "old")
 
+    def test_old_settings_launcher_removed_but_never_a_real_setup_file(self):
+        # Before 0.2.5 the settings launcher was ft-assistant-setup(.cmd); on Windows that's the
+        # same name as the downloaded setup file, which may have been saved here.
+        old = self.dir / "ft-assistant-setup"
+        old.write_text("#!/bin/bash\n# Written by the FT Assistant installer.\n"
+                       'exec "py" -m ft_assistant.open_setup "$@"\n')
+        launchers = inst.write_launchers(self.dir, gpu=False, model="small.en")
+        self.assertFalse(old.exists())
+        self.assertIn("-m ft_assistant.open_setup", launchers["ft-assistant-settings"].read_text())
+        old.write_text((REPO / "installer" / "setup-template.cmd").read_text())   # a setup file
+        inst.write_launchers(self.dir, gpu=False, model="small.en")
+        self.assertTrue(old.exists())
+
+    def test_update_rewrites_menu_entries_and_keeps_login_choice(self):
+        inst.save_manifest(self.dir, {"gpu": False, "model": "m"})
+        old_launchers = inst.write_launchers(self.dir, gpu=False, model="m")
+        inst.write_shortcuts(old_launchers, autostart=False)       # user has no login entry
+        setup_entry = Path(self.tmp.name) / "data" / "applications" / "ft-assistant-setup.desktop"
+        setup_entry.write_text("Exec=/old/ft-assistant-setup\n")
+        with mock.patch.object(inst, "install_packages"), mock.patch.object(inst, "start_app"):
+            inst.main(["finish-update", "--dir", str(self.dir)])
+        self.assertIn("ft-assistant-settings", setup_entry.read_text())
+        self.assertFalse(inst.autostart_entry().exists())
+        self.assertEqual(len(inst.load_manifest(self.dir)["shortcuts"]), 3)
+
+    def test_windows_update_moves_start_menu_to_the_renamed_launcher(self):
+        appdata = Path(self.tmp.name) / "Roaming"
+        with mock.patch.object(inst, "IS_WINDOWS", True), \
+                mock.patch.dict(os.environ, {"APPDATA": str(appdata)}):
+            # A 0.2.4 install: its settings launcher, and Start menu entries that call it.
+            old = self.dir / "ft-assistant-setup.cmd"
+            old.write_text('@echo off\r\ncd /d "x"\r\nstart "" "pythonw.exe" -m ft_assistant.open_setup\r\n')
+            inst.save_manifest(self.dir, {"gpu": True, "model": "m"})
+            menu = inst.menu_dir()
+            menu.mkdir(parents=True)
+            (menu / "FT Assistant setup.cmd").write_text(f'@call "{old}"\r\n')
+            inst.autostart_dir().mkdir(parents=True)
+            inst.autostart_entry().write_text("@call x\r\n")
+            with mock.patch.object(inst, "install_packages"), mock.patch.object(inst, "start_app"), \
+                    mock.patch.object(inst, "register_windows_app"):
+                inst.main(["finish-update", "--dir", str(self.dir)])
+            self.assertFalse(old.exists())
+            new = self.dir / "ft-assistant-settings.cmd"
+            self.assertIn("-m ft_assistant.open_setup", new.read_text())
+            self.assertIn(str(new), (menu / "FT Assistant setup.cmd").read_text())
+            self.assertTrue(inst.autostart_entry().exists())        # login entry kept
+            self.assertEqual(len(inst.load_manifest(self.dir)["shortcuts"]), 4)
+
     def test_launchers_and_shortcuts(self):
         launchers = inst.write_launchers(self.dir, gpu=True, model="large-v3-turbo")
         text = launchers["ft-assistant"].read_text()
@@ -107,6 +156,9 @@ class Installer(unittest.TestCase):
         names = sorted(p.name for p in shortcuts)
         self.assertEqual(names, ["ft-assistant-setup.desktop", "ft-assistant-uninstall.desktop",
                                  "ft-assistant.desktop", "ft-assistant.desktop"])
+        self.assertIn(str(launchers["ft-assistant-settings"]),
+                      (Path(self.tmp.name) / "data" / "applications" / "ft-assistant-setup.desktop")
+                      .read_text())
         self.assertTrue(all(str(p).startswith(self.tmp.name) for p in shortcuts))
         self.assertEqual(len(inst.write_shortcuts(launchers, autostart=False)), 3)
 
@@ -253,6 +305,43 @@ class Installer(unittest.TestCase):
 
 
 class SetupFile(unittest.TestCase):
+    def _linux_gpu_check(self, smi_output):
+        """Run the Linux part's graphics-card check with a pretend nvidia-smi."""
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        start = text.index("\nGPU=no\n") + 1
+        snippet = text[start:text.index('case "${FT_SETUP_GPU:-}"', start)]
+        with tempfile.TemporaryDirectory() as t:
+            # Only these tools on the search path, so this computer's own nvidia-smi isn't used.
+            for tool in ("sh", "grep", "sed", "head", "cat"):
+                os.symlink(subprocess.run(["bash", "-c", f"command -v {tool}"], capture_output=True,
+                                          text=True).stdout.strip(), Path(t, tool))
+            if smi_output is not None:
+                smi = Path(t, "nvidia-smi")
+                smi.write_text("#!/bin/sh\n[ \"$1\" = -L ] && echo 'GPU 0: NVIDIA GeForce GTX 770' "
+                               f"&& exit 0\ncat <<'X'\n{smi_output}\nX\n")
+                smi.chmod(0o755)
+            script = "say() { printf '%s\\n' \"$*\"; }\n" + snippet + 'echo "GPU=$GPU"\n'
+            r = subprocess.run([shutil.which("bash"), "-c", script], capture_output=True,
+                               text=True, env={"PATH": t})
+        return r.stdout
+
+    def test_old_nvidia_driver_uses_the_processor(self):
+        out = self._linux_gpu_check("| NVIDIA-SMI 470.256.02   Driver Version: 470.256.02   "
+                                    "CUDA Version: 11.4     |")
+        self.assertIn("GPU=no", out)
+        self.assertIn("driver is too old", out)
+
+    def test_current_nvidia_driver_uses_the_card(self):
+        out = self._linux_gpu_check("| NVIDIA-SMI 580.95   Driver Version: 580.95   "
+                                    "CUDA Version: 13.2     |")
+        self.assertEqual(out.strip(), "GPU=yes")
+        self.assertEqual(self._linux_gpu_check(None).strip(), "GPU=no")
+
+    def test_windows_checks_the_nvidia_driver(self):
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        self.assertIn("function Get-CudaMajor", text)
+        self.assertIn("$cudaMajor -lt 12", text)
+
     def test_windows_python_check_needs_windows(self):
         text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
         probe = [l for l in text.splitlines() if "import sys, venv, ensurepip" in l]
