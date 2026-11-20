@@ -36,6 +36,15 @@ Last updated: 2026-11-17 (full review and cleanup)
   usual install folders (nvm, npm, ~/.local/bin, their own installers' folders, Volta, Bun, asdf;
   Windows: npm, ~/.local/bin) and started by full path. Setup no longer looks in the retired
   old tool's folder for a model.
+- **v0.2.5** (2026-11-19): a third tester's speech engine never started: his NVIDIA driver was
+  too old for the engine ("CUDA driver version is insufficient"), and setup had only checked
+  that an NVIDIA card exists. Now the worker falls back to the processor (same model) when the
+  card fails at load or mid-dictation; the app says so once and skips the card until it
+  restarts. Setup checks `nvidia-smi`'s CUDA version (12+ needed) and picks the processor for
+  an older driver. His attempt to rerun setup also failed silently: Windows ignores case, so the
+  install folder's settings launcher `ft-assistant-setup.cmd` had the same name as the
+  downloaded `FT-Assistant-setup.cmd`. The launcher is now `ft-assistant-settings`, and
+  updates rewrite the menu entries that point at it.
 
 ## Carried over from the current tool (unchanged)
 
