@@ -45,6 +45,13 @@ Last updated: 2026-11-17 (full review and cleanup)
   install folder's settings launcher `ft-assistant-setup.cmd` had the same name as the
   downloaded `FT-Assistant-setup.cmd`. The launcher is now `ft-assistant-settings`, and
   updates rewrite the menu entries that point at it.
+- **v0.2.6** (2026-11-19): the setup screen's Install buttons install the latest assistant
+  directly. On Windows OpenCode had no direct route (its install script needs bash; without npm
+  the button opened the website): its latest Windows release is now downloaded from GitHub into
+  `~/.opencode/bin` (the folder its script uses; build picked by the same AVX2 check) and that
+  folder is added to the user's PATH. The screen shows "Installing...", checks every 2 s for up
+  to 30 min, then shows "Installed" and picks it if nothing was chosen. Tested for real in the
+  bottle (OpenCode 1.19.6 installed and ran; test install removed afterwards).
 
 ## Carried over from the current tool (unchanged)
 
