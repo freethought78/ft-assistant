@@ -58,6 +58,14 @@ Last updated: 2026-11-17 (full review and cleanup)
   sessions" reached OpenCode in pieces. It now starts directly in a new console window
   (Windows 11 still shows it in Windows Terminal when that's the default). The same command
   worked in the bottle, which has no Windows Terminal; not yet confirmed from the tester's log.
+- **v0.2.8** (2026-11-19): the same tester still got nothing. Two causes, found on his PC:
+  (1) OpenCode itself quit at start, "Database is not empty and has no session table": the
+  OpenCode desktop app had left `~/.local/share/opencode/opencode.db` in a form the terminal
+  version rejects (fixed on his PC by renaming it; not something FT Assistant can fix). (2) Then
+  FT Assistant's window stayed blank: `open_session` passed NUL as the agent's
+  stdin/stdout/stderr, harmless on Linux (the terminal gives the agent its own) but on Windows
+  the agent read and wrote nowhere. Windows now passes no handles. Wine doesn't reproduce (2);
+  confirmed on the tester's PC by launching the fixed way with his install's own Python.
 
 ## Carried over from the current tool (unchanged)
 
