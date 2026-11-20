@@ -52,6 +52,12 @@ Last updated: 2026-11-17 (full review and cleanup)
   folder is added to the user's PATH. The screen shows "Installing...", checks every 2 s for up
   to 30 min, then shows "Installed" and picks it if nothing was chosen. Tested for real in the
   bottle (OpenCode 1.19.6 installed and ran; test install removed afterwards).
+- **v0.2.7** (2026-11-19): on a Windows tester's PC, "Assistant, ..." opened a window that
+  closed at once. The assistant was started through Windows Terminal (`wt.exe`), which
+  re-parses its command line (drops quotes, splits on ";"), so the folder "FT Assistant
+  sessions" reached OpenCode in pieces. It now starts directly in a new console window
+  (Windows 11 still shows it in Windows Terminal when that's the default). The same command
+  worked in the bottle, which has no Windows Terminal; not yet confirmed from the tester's log.
 
 ## Carried over from the current tool (unchanged)
 
