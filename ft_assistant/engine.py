@@ -17,10 +17,25 @@ WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "whisper_worke
 
 
 class Engine:
-    def __init__(self, log_file):
+    def __init__(self, log_file, on_processor=None):
         self.lock = threading.RLock()
         self.proc = None
         self.log_file = log_file
+        # Set once the graphics card has failed: until FT Assistant restarts, the engine goes
+        # straight to the processor instead of trying the card on every dictation.
+        self.processor_only = False
+        self.on_processor = on_processor      # called once when that happens
+
+    def _switched_to_processor(self):
+        if self.processor_only:
+            return
+        self.processor_only = True
+        log.warning("graphics card can't be used; using the processor until the next restart")
+        if self.on_processor:
+            try:
+                self.on_processor()
+            except Exception:
+                log.exception("processor notice failed")
 
     @property
     def alive(self):
@@ -33,13 +48,17 @@ class Engine:
             t = time.time()
             logf = open(self.log_file, "ab")
             extra = {"creationflags": 0x08000000} if sys.platform == "win32" else {}  # no console
+            if self.processor_only:
+                extra["env"] = dict(os.environ, FT_ASSISTANT_DEVICE="cpu")
             self.proc = subprocess.Popen([sys.executable, WORKER], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=logf, **extra)
             logf.close()
-            line = self.proc.stdout.readline()
-            if line.strip() != b"READY":
+            words = self.proc.stdout.readline().split()
+            if not words or words[0] != b"READY":
                 self.stop()
                 raise RuntimeError("speech engine failed to start (see the log)")
+            if b"cpu" in words[1:]:
+                self._switched_to_processor()
             log.debug("engine loaded in %.1fs", time.time() - t)
 
     def warm(self):
@@ -63,6 +82,8 @@ class Engine:
                     if not line:
                         raise RuntimeError("speech engine exited")
                     reply = json.loads(line)
+                    if reply.get("device") == "cpu":
+                        self._switched_to_processor()
                     if "error" in reply:
                         raise RuntimeError(reply["error"])
                     return reply["text"]

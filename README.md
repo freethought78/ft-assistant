@@ -27,7 +27,8 @@ AI coding assistant.
 - **Light on your computer:** the speech engine is loaded only while you dictate and released right
   after, so it doesn't hold memory or graphics memory in between.
 - **Fast with an NVIDIA graphics card** (large-v3-turbo model); without one, a smaller model runs
-  on the processor.
+  on the processor. If the card can't be used (for example its driver is too old), FT Assistant
+  switches to the processor by itself and tells you.
 - **Small setup file** that downloads only what's missing, and reuses what's already on your
   computer (Python, NVIDIA libraries, an existing Whisper model) to save downloads and disk space.
 - **Setup screen** (hold your key and say "Assistant setup") to pick the assistant, change the key,

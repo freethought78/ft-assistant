@@ -59,7 +59,7 @@ class App:
     def __init__(self, settings, log_file):
         self.settings = settings
         self.rec = Recorder()
-        self.engine = Engine(log_file)
+        self.engine = Engine(log_file, on_processor=self.processor_notice)
         self.jobs = queue.Queue()
         self.ctl = threading.Lock()
         self.down = False
@@ -225,6 +225,13 @@ class App:
             except Exception:
                 log.exception("update check failed")
             time.sleep(tick)
+
+    def processor_notice(self):
+        """Shown once when the graphics card couldn't be used and the processor took over."""
+        plat.notify("Your graphics card couldn't be used for speech (its NVIDIA driver may be too "
+                    "old), so FT Assistant is using the processor instead. It works, just more "
+                    "slowly. To make it fast again, update the NVIDIA driver and restart the "
+                    "computer.")
 
     def release_resources(self):
         """Close the tool's own mic stream and stop the engine right after each dictation.

@@ -6,6 +6,10 @@ Protocol (stdin/stdout): prints READY once loaded; then for each request reads a
 little-endian length + float32 16 kHz mono audio, and replies with one JSON line
 {"text": ...} or {"error": ...}. Exits when stdin closes.
 
+If the graphics card can't be used (for example its NVIDIA driver is too old for the speech
+engine), the same model is loaded on the processor instead: then the first line is "READY cpu"
+and replies carry "device": "cpu", so the app can say so and skip the card next time.
+
 Environment:
   FT_ASSISTANT_MODEL       Whisper model name (default large-v3-turbo)
   FT_ASSISTANT_DEVICE      cuda | cpu (default cuda)
@@ -45,9 +49,28 @@ def load_vocab():
     return build_hotwords(words, config.load().keyword)      # re-read: setup may change it
 
 
-model = WhisperModel(MODEL, device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8",
-                     download_root=MODELS_DIR)
-proto_out.write(b"READY\n")
+def load_model(device):
+    return WhisperModel(MODEL, device=device, compute_type="float16" if device == "cuda" else "int8",
+                        download_root=MODELS_DIR)
+
+
+def use_processor(e):
+    """Switch to the processor after the graphics card failed (`e`). Noted in the log."""
+    global model, device
+    sys.stderr.write(f"Warning: the graphics card can't be used ({e}); using the processor.\n")
+    sys.stderr.flush()
+    device = "cpu"
+    model = load_model(device)
+
+
+device = DEVICE
+try:
+    model = load_model(device)
+except Exception as e:
+    if device != "cuda":
+        raise
+    use_processor(e)
+proto_out.write(b"READY\n" if device == DEVICE else b"READY cpu\n")
 proto_out.flush()
 
 inp = sys.stdin.buffer
@@ -57,11 +80,24 @@ while True:
         break
     (n,) = struct.unpack("<I", hdr)
     audio = np.frombuffer(inp.read(n), dtype=np.float32)
-    try:
-        segs, _ = model.transcribe(audio, language="en", beam_size=5, vad_filter=True,
-                                   condition_on_previous_text=False, hotwords=load_vocab())
-        reply = {"text": " ".join(s.text.strip() for s in segs).strip()}
-    except Exception as e:
-        reply = {"error": str(e)}
+    reply = None
+    for attempt in (1, 2):
+        try:
+            segs, _ = model.transcribe(audio, language="en", beam_size=5, vad_filter=True,
+                                       condition_on_previous_text=False, hotwords=load_vocab())
+            reply = {"text": " ".join(s.text.strip() for s in segs).strip()}
+            break
+        except Exception as e:
+            # Some graphics-card problems (a missing cuBLAS/cuDNN library) only show up here.
+            if attempt == 1 and device == "cuda":
+                try:
+                    use_processor(e)
+                    continue
+                except Exception as e2:
+                    e = e2
+            reply = {"error": str(e)}
+            break
+    if device != DEVICE:
+        reply["device"] = device
     proto_out.write((json.dumps(reply) + "\n").encode())
     proto_out.flush()
