@@ -1,5 +1,6 @@
 """The Windows layer's pure parts, tested on Linux (the rest is tested in the Bottles bottle)."""
 import subprocess
+import sys
 import unittest
 
 from ft_assistant import harness
@@ -76,6 +77,13 @@ class WindowsTerminal(unittest.TestCase):
         cmd = harness.terminal_command(["opencode", r"C:\S", "--prompt", "hi"], r"C:\S",
                                        which=which, windows=True)
         self.assertEqual(cmd, [r"C:\npm\opencode.cmd", r"C:\S", "--prompt", "hi"])
+
+    def test_agent_uses_its_own_console(self):
+        # NUL as stdin/stdout made OpenCode quit as soon as its window opened.
+        self.assertEqual(harness.std_handles(windows=True), {})
+        self.assertEqual(harness.new_window_kwargs(["x"])["creationflags"] & 0x10, 0x10) \
+            if sys.platform == "win32" else None
+        self.assertIn("stdin", harness.std_handles(windows=False))
 
     def test_terminal_classes(self):
         self.assertTrue(w.is_terminal_class("CASCADIA_HOSTING_WINDOW_CLASS"))

@@ -187,9 +187,18 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
     argv[0] = exe              # the full path: the terminal may not find it on its own
     cmd = terminal_command(argv, folder)
     env = with_dir_on_path(clean_env(), Path(exe).parent)
-    launcher(cmd, cwd=str(folder), env=env, stdin=subprocess.DEVNULL,
-             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **new_window_kwargs(cmd))
+    launcher(cmd, cwd=str(folder), env=env, **std_handles(), **new_window_kwargs(cmd))
     return h
+
+
+def std_handles(windows=sys.platform == "win32"):
+    """Input/output for the agent's window. Linux: none from us (the terminal program gives the
+    agent its own). Windows: leave them alone, so the agent uses its new console window. Passing
+    NUL there (as Linux does) made the agent read and write nowhere, and it quit at once."""
+    if windows:
+        return {}
+    return {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL}
 
 
 # ---------------------------------------------------------------- installing an assistant
