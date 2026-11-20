@@ -100,6 +100,15 @@ fi
 
 GPU=no
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | grep -q '^GPU'; then GPU=yes; fi
+# The speech engine needs a driver for CUDA 12 or newer; an older one can't use the card at all.
+CUDA_MAJOR="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: *\([0-9][0-9]*\).*/\1/p' | head -1)"
+if [ "$GPU" = "yes" ] && [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -lt 12 ]; then
+  GPU=no
+  say "Your NVIDIA driver is too old for the speech engine (it supports CUDA $CUDA_MAJOR; 12 or newer"
+  say "is needed), so FT Assistant will use the processor. To use the graphics card instead,"
+  say "update the NVIDIA driver and run setup again."
+  say ""
+fi
 case "${FT_SETUP_GPU:-}" in yes|no) GPU="$FT_SETUP_GPU";; esac   # testing hook
 MODEL="small.en"; [ "$GPU" = "yes" ] && MODEL="large-v3-turbo"
 PY_SOURCE=standalone; py_ok && py_venv && PY_SOURCE=system
@@ -235,6 +244,27 @@ $gpu = 'no'
 try {
   if (Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' }) { $gpu = 'yes' }
 } catch { }
+# The speech engine needs a driver for CUDA 12 or newer; an older one can't use the card at all.
+function Get-CudaMajor {
+  $smi = @($env:FT_SETUP_NVIDIA_SMI,     # testing hook: a pretend nvidia-smi
+           (Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source),
+           (Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe')) |
+         Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+  if (-not $smi) { return $null }
+  try { $out = (& $smi 2>$null) -join "`n" } catch { return $null }
+  if ($out -match 'CUDA Version:\s*(\d+)') { return [int]$Matches[1] }
+  return $null
+}
+if ($gpu -eq 'yes') {
+  $cudaMajor = Get-CudaMajor
+  if ($cudaMajor -and $cudaMajor -lt 12) {
+    $gpu = 'no'
+    Say "Your NVIDIA driver is too old for the speech engine (it supports CUDA ${cudaMajor}; 12 or newer"
+    Say 'is needed), so FT Assistant will use the processor. To use the graphics card instead,'
+    Say 'update the NVIDIA driver and run setup again.'
+    Say ''
+  }
+}
 if ($env:FT_SETUP_GPU -in @('yes', 'no')) { $gpu = $env:FT_SETUP_GPU }   # testing hook (Wine has no CUDA)
 $model = if ($gpu -eq 'yes') { 'large-v3-turbo' } else { 'small.en' }
 $default = Join-Path $env:LOCALAPPDATA 'FT Assistant'

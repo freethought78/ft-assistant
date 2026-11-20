@@ -304,8 +304,11 @@ def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
         "PYTHONNOUSERSITE": "1",     # ignore any Python packages the user installed elsewhere
     }
     launchers = {}
+    # The settings launcher was called ft-assistant-setup(.cmd) before 0.2.5. Windows ignores
+    # case, so that was the same name as the downloaded FT-Assistant-setup.cmd: run from the
+    # install folder, it opened the settings instead of running setup.
     for name, module in (("ft-assistant", "ft_assistant"),
-                         ("ft-assistant-setup", "ft_assistant.open_setup"),
+                         ("ft-assistant-settings", "ft_assistant.open_setup"),
                          ("ft-assistant-uninstall", None)):
         if IS_WINDOWS:
             path = d / (name + ".cmd")
@@ -343,6 +346,7 @@ def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             path.chmod(0o755)
         launchers[name] = path
+    remove_old_settings_launcher(d)
     return launchers
 
 
@@ -352,6 +356,24 @@ def _desktop_entry(name, comment, exec_path, terminal=False, extra=""):
             f"Categories=Utility;Accessibility;\n{extra}")
 
 
+def remove_old_settings_launcher(install_dir):
+    """Delete the pre-0.2.5 settings launcher, but only if it's that small launcher: a real setup
+    file saved in the install folder has the same name on Windows and must be kept."""
+    old = Path(install_dir) / ("ft-assistant-setup.cmd" if IS_WINDOWS else "ft-assistant-setup")
+    try:
+        if old.is_file() and old.stat().st_size < 4096:
+            text = old.read_text(encoding="utf-8", errors="replace")
+            if "-m ft_assistant.open_setup" in text and "CMDLITERAL" not in text:
+                old.unlink()
+    except OSError:
+        pass
+
+
+def autostart_entry():
+    """The login entry write_shortcuts makes."""
+    return autostart_dir() / (APP_NAME + ".cmd" if IS_WINDOWS else "ft-assistant.desktop")
+
+
 def write_shortcuts(launchers, autostart=True):
     """Login entry and app-menu entries (Linux .desktop files; Windows .cmd shortcuts)."""
     written = []
@@ -359,7 +381,7 @@ def write_shortcuts(launchers, autostart=True):
         # Windows shortcuts (.lnk) need a COM helper; plain .cmd files in the Start Menu work.
         md = menu_dir()
         md.mkdir(parents=True, exist_ok=True)
-        for label, key in ((APP_NAME, "ft-assistant"), (APP_NAME + " setup", "ft-assistant-setup"),
+        for label, key in ((APP_NAME, "ft-assistant"), (APP_NAME + " setup", "ft-assistant-settings"),
                            ("Uninstall " + APP_NAME, "ft-assistant-uninstall")):
             p = md / (label + ".cmd")
             p.write_text(f'@call "{launchers[key]}"\r\n', encoding="utf-8")
@@ -376,7 +398,7 @@ def write_shortcuts(launchers, autostart=True):
         "ft-assistant.desktop": _desktop_entry(APP_NAME, "Push-to-talk dictation",
                                                launchers["ft-assistant"]),
         "ft-assistant-setup.desktop": _desktop_entry(APP_NAME + " setup", "Choose your assistant "
-                                                     "and Assistant key", launchers["ft-assistant-setup"]),
+                                                     "and Assistant key", launchers["ft-assistant-settings"]),
         "ft-assistant-uninstall.desktop": _desktop_entry("Uninstall " + APP_NAME, "Remove FT "
                                                          "Assistant", launchers["ft-assistant-uninstall"],
                                                          terminal=True),
@@ -596,6 +618,14 @@ def finish_update(d, no_start=False):
     save_manifest(d, info)
     launchers = write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
                                 info.get("gpu_libs", "pip"))
+    # Menu entries point at the launchers by name, so rewrite them (keeping the login entry
+    # only if it's still there: the user may have turned it off).
+    try:
+        info["shortcuts"] = [str(p) for p in
+                             write_shortcuts(launchers, autostart=autostart_entry().exists())]
+        save_manifest(d, info)
+    except OSError as e:
+        say(f"Warning: couldn't update the menu entries ({e}).")
     register_windows_app(d, launchers, app_version(d))
     if not no_start:
         start_app(launchers)
