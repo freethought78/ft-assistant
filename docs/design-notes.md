@@ -805,7 +805,17 @@ optional (off by default) instead of the main mechanism. That's simpler to under
 - On the `conversation-management` branch: "<word> new topic". The window gets that line from
   there, so the list on `next` shows only the commands that work there.
 
-### The installer is called "FT Assistant Installer" (added 2026-11-21)
+### The installer is called "FT Assistant Installer" (added and built 2026-11-21)
+
+**Built:**
+- `installer/build.py` writes `dist/FT-Assistant-Installer.cmd`, plus the same file under its old
+  name (`LEGACY_NAMES`), to attach to a release or two. CLAUDE.md's release step uploads both.
+- The installer prints "FT Assistant Installer" as its header. The README, the Linux repair
+  notice and install.py's help text use the new name.
+- A copy of the installer (either name) saved in the chosen folder doesn't count as "other
+  files" for the subfolder rule.
+
+The plan as agreed:
 
 **Decided by the user:** the file people download is named for what it is. On the GitHub Releases
 page, and everywhere in the project, it's **FT Assistant Installer**.
@@ -830,7 +840,36 @@ page, and everywhere in the project, it's **FT Assistant Installer**.
   `ft-assistant-settings`, `ft-assistant-uninstall`). Windows ignores upper and lower case: that
   was the 0.2.5 bug.
 
-### The running program is called "FT Assistant", not python or pythonw (added 2026-11-21)
+### The running program is called "FT Assistant", not python or pythonw (added and built 2026-11-21)
+
+**Built** (`ft_assistant/procname.py`; `NAMED_PROGRAMS`, `make_named_programs` in install.py):
+- **Linux:** each process sets its name at start with prctl:
+  - the app: `FT Assistant`;
+  - the speech worker: `FT Asst speech`;
+  - the setup window: `FT Asst setup`;
+  - the voice commands window: `FT Asst help`.
+
+  The full command line is unchanged, so older ways of finding it still work.
+- **Windows:** the installer copies the runtime's `pythonw.exe` to `FT Assistant.exe`,
+  `FT Assistant speech.exe`, `FT Assistant setup.exe` and `FT Assistant help.exe`. It does this
+  at install and at every update.
+  - Each copy's version resource is replaced (`UpdateResourceW`) so its description reads
+    "FT Assistant ...".
+  - The launchers, the engine, the setup window and "help" start these copies, falling back to
+    pythonw/sys.executable if a copy is missing.
+- **Tested 2026-11-21:**
+  - Unit tests: names within Linux's 15-character limit, the same names in the app and the
+    installer, the version resource read back, the copies, and the launcher choosing them.
+  - Linux, real processes: `pgrep -x` found "FT Asst help", "FT Asst setup" and "FT Asst
+    speech".
+  - Windows bottle: the four copies exist and Windows reads back their descriptions ("FT
+    Assistant", ...). The copy runs Python. The app ran as "FT Assistant.exe", and its setup
+    window as "FT Assistant setup.exe" (tasklist).
+  - **Not yet on a real Windows PC** (Task Manager's display of the description).
+- **Not done (left for later if wanted):** setup's Stop-RunningApp and install.py's
+  `is_ft_assistant` still find FT Assistant by path and command line, which keeps working.
+
+The plan as agreed:
 
 **Decided by the user:** in Task Manager, System Monitor, `ps` and similar, the running program shows
 as **FT Assistant** instead of `python`, `python3` or `pythonw`. Users and FT Assistant itself (setup,

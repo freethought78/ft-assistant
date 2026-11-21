@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import buildinfo, config, harness, open_setup, textproc, updater
+from . import buildinfo, config, harness, open_setup, procname, textproc, updater
 from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -213,7 +213,8 @@ class App:
         """ "<word> help": the voice commands window, in its own process."""
         if self.commands_proc is not None and self.commands_proc.poll() is None:
             return
-        self.commands_proc = subprocess.Popen([sys.executable, "-m", "ft_assistant.voice_commands"])
+        self.commands_proc = subprocess.Popen([procname.executable("help"), "-m",
+                                               "ft_assistant.voice_commands"])
 
     def open_setup(self):
         """Show the setup screen in its own process; the Assistant key is paused meanwhile."""
@@ -281,6 +282,7 @@ class App:
 
 
 def main():
+    procname.set_name("app")
     log_file = setup_logging()
     _lock = single_instance()  # noqa: F841 (held for the life of the process)
     problem = plat.session_problem()

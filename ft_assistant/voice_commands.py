@@ -98,7 +98,8 @@ def open_from_setup(parent, word, key_name, dictation_only, base_px):
 
 def main():
     """On its own, for "<word> help": with the saved settings."""
-    from . import setup_ui              # its look (fonts, dark theme); imported here, not above
+    from . import procname, setup_ui    # its look (fonts, dark theme); imported here, not above
+    procname.set_name("help")
     settings = config.load()
     setup_ui.dpi_aware()
     root = tk.Tk()

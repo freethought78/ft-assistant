@@ -15,7 +15,7 @@ from tkinter import messagebox, ttk
 
 from . import (__version__, buildinfo, config, harness, keys, look, textproc, updater,
                voice_commands)
-from . import plat
+from . import plat, procname
 
 CHANGED = 10
 CAPTURE_SECONDS = 15
@@ -716,6 +716,7 @@ def dpi_aware():
 
 
 def main():
+    procname.set_name("setup")
     settings = config.load()
     dpi_aware()
     root = tk.Tk()

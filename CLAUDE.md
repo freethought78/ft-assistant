@@ -32,7 +32,8 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   (now 0.3.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
-  `gh release create vX.Y.Z dist/FT-Assistant-setup.cmd` (as freethought78). The app notices
+  `gh release create vX.Y.Z dist/FT-Assistant-Installer.cmd dist/FT-Assistant-setup.cmd` (as
+  freethought78; the second is the same file under its pre-0.3.0 name, for a release or two). The app notices
   within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on
   the user's own install worked (2026-11-18).
 - **FT Assistant's own Python is pinned** in `installer/install.py` (`RUNTIME_*`). The Linux
@@ -89,6 +90,10 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   `~/.config/ft-assistant/ft-assistant.log`). Restart:
   `pkill -f 'ft-assistant/python/bin/python3 -m [f]t_assistant'; sleep 1; setsid ~/.local/share/ft-assistant/ft-assistant >/dev/null 2>&1 < /dev/null &`
   (the `[f]` stops `pkill` from matching, and killing, the shell running the command itself).
+  From 0.3.0 the processes are also named (`FT Assistant`, `FT Asst speech`, `FT Asst setup`,
+  `FT Asst help`; Windows: `FT Assistant*.exe`), so `pgrep -x 'FT Assistant'` finds the program.
+  A test build from `run-branch.sh` has the same names: tell them apart by their
+  `FT_ASSISTANT_CONFIG_DIR` (as `run-branch.sh` does).
 - Test changes before deploying them over the working version, and keep a way to roll back.
 - **Never log what the user says, and no activity either.** On 2026-11-17 transcript logging was
   turned off; on 2026-11-18 the user chose an **errors-only log** (plus one start-up line) and had

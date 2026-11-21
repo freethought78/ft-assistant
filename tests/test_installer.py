@@ -404,7 +404,7 @@ class SetupFile(unittest.TestCase):
         spec_b = importlib.util.spec_from_file_location("ft_build", REPO / "installer" / "build.py")
         build = importlib.util.module_from_spec(spec_b)
         spec_b.loader.exec_module(build)
-        return build.build(Path(t, "FT-Assistant-setup.cmd"))
+        return build.build(Path(t, "FT-Assistant-Installer.cmd"))
 
     def linux_functions(self, out):
         text = out.read_text()

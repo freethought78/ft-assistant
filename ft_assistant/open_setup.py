@@ -7,10 +7,12 @@ FT Assistant's own Python a Tk with smooth fonts instead.)"""
 import os
 import sys
 
+from . import procname
+
 
 def command():
     """(argv, env) that runs the setup window."""
-    return [sys.executable, "-m", "ft_assistant.setup_ui"], dict(os.environ)
+    return [procname.executable("setup"), "-m", "ft_assistant.setup_ui"], dict(os.environ)
 
 
 if __name__ == "__main__":

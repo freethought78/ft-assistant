@@ -1,7 +1,7 @@
 :<<"::CMDLITERAL"
 @echo off
 rem ---------------------------------------------------------------- Windows part
-rem FT Assistant setup. Double-click this file. The Linux part below is skipped on Windows.
+rem FT Assistant Installer. Double-click this file. The Linux part below is skipped on Windows.
 setlocal
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$f='%~f0'; $t=[IO.File]::ReadAllText($f); $m='#__FT_ASSISTANT_'+'PS__'; $p=$t.Substring($t.IndexOf($m)+$m.Length); $e='#__FT_ASSISTANT_'+'INSTALLER__'; $p=$p.Substring(0,$p.IndexOf($e)); $env:FT_SETUP_FILE=$f; Invoke-Expression $p"
 set "RC=%ERRORLEVEL%"
@@ -10,7 +10,7 @@ if not defined FT_SETUP_YES pause
 exit /b %RC%
 ::CMDLITERAL
 # ---------------------------------------------------------------- Linux part
-# FT Assistant setup. Run with:  bash FT-Assistant-setup.cmd
+# FT Assistant Installer. Run with:  bash FT-Assistant-Installer.cmd
 # (The Windows part above is skipped on Linux.)
 set -u
 SELF="$(readlink -f "$0")"
@@ -18,8 +18,8 @@ say() { printf '%s\n' "$*"; }
 fail() { say ""; say "$*"; say ""; exit 1; }
 
 say ""
-say "FT Assistant setup"
-say "=================="
+say "FT Assistant Installer"
+say "======================"
 say "Step 1 of 6: Checking what this computer already has (a few seconds)..."
 say ""
 
@@ -106,7 +106,7 @@ own_folder() {   # $1 is missing, empty, or holds only FT Assistant's own things
     [ "$(readlink -f "$f")" = "$SELF" ] && continue       # this setup file
     n="$(basename "$f")"
     case "$own" in *" $n "*) continue;; esac
-    case "$n" in ft-runtime-*|ft-assistant-setup) continue;; esac
+    case "$n" in ft-runtime-*|ft-assistant-setup|FT-Assistant-Installer*.cmd|FT-Assistant-setup*.cmd) continue;; esac
     return 1
   done
   return 0
@@ -283,8 +283,8 @@ function Say($s) { Write-Host $s }
 function Fail($s) { Write-Host ''; Write-Host $s; exit 1 }
 
 Say ''
-Say 'FT Assistant setup'
-Say '=================='
+Say 'FT Assistant Installer'
+Say '======================'
 Say 'Step 1 of 6: Checking what this computer already has (a few seconds)...'
 Say ''
 if (-not [Environment]::Is64BitOperatingSystem) { Fail 'FT Assistant needs 64-bit Windows.' }
@@ -473,7 +473,8 @@ function Test-OwnFolder($folder) {   # missing, empty, or holding only FT Assist
   if (-not (Test-Path -LiteralPath $folder)) { return $true }
   foreach ($item in @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue)) {
     if ($item.FullName -eq $env:FT_SETUP_FILE) { continue }          # this setup file
-    if ($ownItems -contains $item.Name -or $item.Name -like 'ft-runtime-*') { continue }
+    if ($ownItems -contains $item.Name -or $item.Name -like 'ft-runtime-*' -or
+        $item.Name -like 'FT-Assistant-Installer*.cmd' -or $item.Name -like 'FT-Assistant-setup*.cmd') { continue }
     return $false
   }
   return $true

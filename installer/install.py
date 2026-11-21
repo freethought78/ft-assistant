@@ -1,6 +1,6 @@
 """FT Assistant installer, updater and uninstaller (shared by Linux and Windows).
 
-The setup script (FT-Assistant-setup.cmd) has already checked requirements, shown the
+The setup script (FT-Assistant-Installer.cmd) has already checked requirements, shown the
 download size, asked for the install folder and downloaded a standalone Python into
 <install dir>/python. It then runs this file with that Python:
 
@@ -125,8 +125,117 @@ def python_exe(install_dir):
 
 
 def pythonw_exe(install_dir):
-    """Windows: the no-console Python next to python_exe()."""
-    return python_exe(install_dir).with_name("pythonw.exe")
+    """Windows: the program FT Assistant runs with: the copy of the no-console Python named
+    "FT Assistant.exe" (see make_named_programs), or pythonw.exe itself."""
+    named = python_exe(install_dir).with_name(NAMED_PROGRAMS["app"])
+    return named if named.exists() else python_exe(install_dir).with_name("pythonw.exe")
+
+
+# Windows: a program's name (Task Manager, tasklist) comes from its .exe file, so FT Assistant's
+# processes run from copies of its own pythonw.exe with these names (the same names as
+# ft_assistant/procname.py), described as "FT Assistant". Linux names its processes itself.
+NAMED_PROGRAMS = {"app": "FT Assistant.exe", "speech": "FT Assistant speech.exe",
+                  "setup": "FT Assistant setup.exe", "help": "FT Assistant help.exe"}
+NAMED_DESCRIPTIONS = {"app": "FT Assistant", "speech": "FT Assistant (speech engine)",
+                      "setup": "FT Assistant setup", "help": "FT Assistant voice commands"}
+
+
+def version_info(description, version):
+    """A Windows version resource (VS_VERSIONINFO) with this file description."""
+    import struct
+
+    def node(key, value=b"", text=False, children=b""):
+        k = (key + "\0").encode("utf-16-le")
+        head = 6 + len(k)
+        pad1 = b"\0" * (-head % 4)
+        val_len = len(value) // 2 if text else len(value)
+        body = k + pad1 + value + b"\0" * (-len(value) % 4) + children
+        return struct.pack("<HHH", 6 + len(body), val_len, 1 if text else 0) + body
+
+    def string(key, val):
+        s = node(key, (val + "\0").encode("utf-16-le"), text=True)
+        return s + b"\0" * (-len(s) % 4)
+
+    parts = [int(x) for x in (version.split(".") + ["0"] * 4)[:4]]
+    ms, ls = (parts[0] << 16) | parts[1], (parts[2] << 16) | parts[3]
+    fixed = struct.pack("<13I", 0xFEEF04BD, 0x00010000, ms, ls, ms, ls, 0x3F, 0, 0x40004, 1, 0, 0, 0)
+    strings = b"".join(string(k, v) for k, v in (
+        ("CompanyName", "Python Software Foundation"),
+        ("FileDescription", description),
+        ("FileVersion", version),
+        ("InternalName", description),
+        ("LegalCopyright", "Copyright (c) Python Software Foundation"),
+        ("OriginalFilename", "pythonw.exe"),
+        ("ProductName", "FT Assistant"),
+        ("ProductVersion", version),
+        ("Comments", f"Python {version} (pythonw.exe), named for FT Assistant"),
+    ))
+    table = node("040904b0", children=strings)
+    sfi = node("StringFileInfo", children=table + b"\0" * (-len(table) % 4))
+    var = node("Translation", struct.pack("<HH", 0x0409, 0x04B0))
+    vfi = node("VarFileInfo", children=var)
+    kids = sfi + b"\0" * (-len(sfi) % 4) + vfi
+    return node("VS_VERSION_INFO", fixed, children=kids)
+
+
+def set_description(exe, description, version):
+    """Windows: replace an .exe's version resource (Task Manager shows its description)."""
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    RT_VERSION, VS_VERSION_INFO = 16, 1
+    k32.LoadLibraryExW.restype = wintypes.HMODULE
+    k32.LoadLibraryExW.argtypes = [wintypes.LPCWSTR, wintypes.HANDLE, wintypes.DWORD]
+    k32.FreeLibrary.argtypes = [wintypes.HMODULE]
+    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMODULE, ctypes.c_void_p,
+                                  ctypes.c_void_p, wintypes.WORD, ctypes.c_void_p)
+    k32.EnumResourceLanguagesW.argtypes = [wintypes.HMODULE, ctypes.c_void_p, ctypes.c_void_p,
+                                           callback, ctypes.c_void_p]
+    k32.BeginUpdateResourceW.restype = wintypes.HANDLE
+    k32.BeginUpdateResourceW.argtypes = [wintypes.LPCWSTR, wintypes.BOOL]
+    k32.UpdateResourceW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                    wintypes.WORD, ctypes.c_void_p, wintypes.DWORD]
+    k32.EndUpdateResourceW.argtypes = [wintypes.HANDLE, wintypes.BOOL]
+    langs = []
+    mod = k32.LoadLibraryExW(str(exe), None, 0x2)                 # as a data file
+    if mod:
+        keep = callback(lambda m, t, n, lang, p: langs.append(lang) or True)
+        k32.EnumResourceLanguagesW(mod, RT_VERSION, VS_VERSION_INFO, keep, None)
+        k32.FreeLibrary(mod)
+    data = version_info(description, version)
+    buf = ctypes.create_string_buffer(data, len(data))
+    h = k32.BeginUpdateResourceW(str(exe), False)
+    if not h:
+        raise OSError(ctypes.get_last_error(), "BeginUpdateResource failed")
+    for lang in langs:                                            # the old one(s) out
+        k32.UpdateResourceW(h, RT_VERSION, VS_VERSION_INFO, lang, None, 0)
+    ok = k32.UpdateResourceW(h, RT_VERSION, VS_VERSION_INFO, 0x0409, buf, len(data))
+    if not k32.EndUpdateResourceW(h, not ok):
+        raise OSError(ctypes.get_last_error(), "EndUpdateResource failed")
+
+
+def make_named_programs(pydir):
+    """Windows: the named copies of the runtime's pythonw.exe (see NAMED_PROGRAMS). A copy that
+    can't be made just isn't used (pythonw.exe is); never fails the install."""
+    if not IS_WINDOWS:
+        return
+    pydir = Path(pydir)
+    src = pydir / "pythonw.exe"
+    if not src.exists():
+        return
+    for role, name in NAMED_PROGRAMS.items():
+        dest = pydir / name
+        tmp = pydir / (name + ".new")
+        try:
+            shutil.copy2(src, tmp)
+            try:
+                set_description(tmp, NAMED_DESCRIPTIONS[role], RUNTIME_PYTHON)
+            except Exception as e:                # still named right; Task Manager says "Python"
+                say(f"  (Couldn't set the description of {name}: {e})")
+            os.replace(tmp, dest)
+        except OSError as e:
+            tmp.unlink(missing_ok=True)
+            say(f"  Couldn't make {name} ({e}); FT Assistant shows as pythonw instead.")
 
 
 # ---------------------------------------------------------------- FT Assistant's own Python
@@ -514,7 +623,7 @@ def write_launchers(install_dir, gpu, model, gpu_libs="pip"):
             # A system upgrade can replace the computer's Python under a venv; say so clearly.
             lines.append(f'"{py}" -c "" 2>/dev/null || {{ notify-send -a "{APP_NAME}" "{APP_NAME} needs '
                          f'a repair" "Its Python stopped working (often after a system upgrade). Run '
-                         f'FT-Assistant-setup.cmd again to repair it."; exit 1; }}')
+                         f'FT-Assistant-Installer.cmd again to repair it."; exit 1; }}')
             if gpu and gpu_libs == "pip":
                 lines.append('SP=$("' + str(py) + '" -c "import site;print(site.getsitepackages()[0])")')
                 lines.append('export LD_LIBRARY_PATH="$SP/nvidia/cublas/lib:$SP/nvidia/cudnn/lib'
@@ -722,6 +831,7 @@ def cmd_install(a):
     d.mkdir(parents=True, exist_ok=True)
     stop_running_app()
     ensure_smooth_tk(runtime_dir(d))        # before anything opens a window
+    make_named_programs(runtime_dir(d))
     if not can_draw_windows(python_exe(d)):
         if a.python_source == "system":
             say("This computer's Python can't open windows (its Tcl/Tk part is missing), so the")
@@ -821,6 +931,7 @@ def complete_update(d, info, no_start):
     """The end of every update: launchers, menu entries, restart."""
     info["updated"] = time.strftime("%Y-%m-%d %H:%M")
     save_manifest(d, info)
+    make_named_programs(runtime_dir(d))
     launchers = write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
                                 info.get("gpu_libs", "pip"))
     # Menu entries point at the launchers by name, so rewrite them (keeping the login entry

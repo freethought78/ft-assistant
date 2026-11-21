@@ -50,13 +50,13 @@ AI coding assistant.
 
 ## Install
 
-Download `FT-Assistant-setup.cmd` from the
+Download **FT Assistant Installer** (`FT-Assistant-Installer.cmd`) from the
 [latest release](https://github.com/freethought78/ft-assistant/releases/latest), then:
 
 - **Windows:** double-click it.
-- **Linux:** run `bash FT-Assistant-setup.cmd` in a terminal.
+- **Linux:** run `bash FT-Assistant-Installer.cmd` in a terminal.
 
-Setup first asks where to install: press Enter for the usual place in your user folder, or C to
+The installer first asks where to install: press Enter for the usual place in your user folder, or C to
 pick another folder in a folder window. If that folder already has other files in it, FT Assistant
 goes into an "FT Assistant" folder of its own there. Setup then shows exactly what it will
 download and how big it is, and waits for you before downloading anything. On Linux it can
@@ -84,6 +84,8 @@ and keeps your settings, the speech model and anything already downloaded.
 
 - **Beeps:** a high beep means the microphone is listening. A lower beep when you let go means it
   heard the release.
+- **It shows as "FT Assistant"** in Task Manager or System Monitor (not as "python"), so it's
+  easy to find and close if you ever need to.
 - **Short taps and silence are ignored**, and so are the stock phrases Whisper sometimes makes up
   on silence (such as "Thank you.").
 - **Your own words:** to get names or unusual words spelled your way, add them to `vocabulary.txt`,
