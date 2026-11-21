@@ -66,6 +66,22 @@ Last updated: 2026-11-17 (full review and cleanup)
   stdin/stdout/stderr, harmless on Linux (the terminal gives the agent its own) but on Windows
   the agent read and wrote nowhere. Windows now passes no handles. Wine doesn't reproduce (2);
   confirmed on the tester's PC by launching the fixed way with his install's own Python.
+- **v0.3.0** (2026-11-21): everything planned for `next` (see "Planned" below):
+  - FT Assistant's own pinned Python, reused on reruns, with updates moving installs over;
+  - smooth text on Linux from a hand-built Tk (pre-release `smooth-tk-9.0.4`);
+  - the setup window's text size following the desktop;
+  - safe uninstall;
+  - the install-folder window;
+  - `run-branch.sh` and the branch label;
+  - "Assistant help" / "Assistant stop" and the voice commands window;
+  - the installer renamed to `FT-Assistant-Installer.cmd` (also attached under the old name);
+  - processes named "FT Assistant";
+  - real Windows Start menu shortcuts.
+
+  **Released at the user's request with a known open report:** a Windows tester who updated
+  from `next` (Caps Lock key) saw "FT Assistant" in Task Manager, but the Assistant key did
+  nothing afterwards. The cause wasn't found yet. Suspect: the renamed `FT Assistant.exe` copy
+  (a log and a plain-pythonw comparison were requested from the tester).
 
 ## Carried over from the current tool (unchanged)
 
