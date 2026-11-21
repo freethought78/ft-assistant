@@ -409,6 +409,64 @@ another Python on the computer, and never adds anything to one.
     the standalone runtime, has no link to the system Python, and still dictates. Rolling back
     to `python.old` must work.
 
+**Smooth text in the setup window on Linux (decided 2026-11-21).** The standalone Python's Tk
+(9.0.4 in python-build-standalone 20261110) draws with old X11 fonts: rough, unsmoothed text. Until
+now the setup window borrowed the system Python to draw smoothly (`gui.py`). The user's decision:
+take whatever steps are needed so the setup window **never** shows rough text, even the first
+time, and **no GitHub automation** (nothing that may cost money); we build and track it ourselves.
+
+- **How:** Tk is a separate library inside the runtime (`python/lib/libtcl9tk9.0.so`), so it can
+  be swapped for the same Tk version built with smooth fonts (Xft).
+  - Built and checked locally 2026-11-21: it draws with the desktop's smooth fonts.
+  - It needs only `libX11`, `libXft` and `libfontconfig`, which nearly every desktop has.
+  - Its newest glibc symbol is 2.14, so it loads on Linux back to about 2011.
+- **Build recipe** (to be written down as a script in the repo, run by hand):
+  1. Get Tcl and Tk sources of the runtime's exact version (`info patchlevel`).
+  2. Get the Xft, fontconfig and freetype header packages with `apt-get download`, unpacked into
+     a scratch folder (nothing installed on the system).
+  3. Build Tcl, then Tk with `--enable-xft --disable-xss --disable-zipfs`. Use a tiny
+     `xft-config` that points at those headers. Force the old symbol versions of `pow`, `fmod`,
+     `fmodf` and `hypot` with `.symver`, so the library doesn't need glibc 2.29-2.38.
+  4. Check: `readelf -d` needs only the libraries above; `objdump -T` shows nothing newer than
+     GLIBC_2.14; with the library swapped in, `::tk::pkgconfig get fontsystem` says `xft`.
+- **In setup:**
+  1. The Python runtime download is pinned to the matching python-build-standalone release
+     (not "latest"), so the Tk version always matches.
+  2. The smooth Tk (about 1.8 MB) is attached to our own GitHub release.
+  3. After unpacking Python, and before anything opens a window, setup swaps it in, keeping the
+     original as `libtcl9tk9.0.so.rough`.
+  4. It checks that a Tk window opens. If it doesn't (e.g. `libXft` missing), it puts the
+     original back, so the window opens with rough text rather than not at all.
+- **Then** `gui.py`'s borrowing of the system Python and the `python3-tk` offer are removed.
+- **Updating Python later** means rebuilding Tk with the recipe for the new Tk version.
+
+### Setup window text size follows the desktop (built 2026-11-21)
+
+- **The problem:** the setup window used fixed 15-pixel text. On the user's desktop (Ubuntu
+  10 pt) that was too big. Worse, Tk converts sizes with the monitor's *physical* DPI: the
+  user's wide monitor reports 54 DPI while the desktop draws text at 96 DPI. So with smooth fonts
+  every size came out about 1.8 times too big.
+- **Now** (`ft_assistant/look.py`, `setup_ui.py`):
+  - **Linux:**
+    - The desktop's interface font and size: Cinnamon, GNOME, MATE (gsettings), Xfce (xfconf),
+      KDE (kreadconfig).
+    - Times its text-scaling factor, at the desktop's font DPI (`Xft.dpi`).
+    - Tk's scaling is set to that DPI.
+  - **Windows:** Windows' interface font and size. The setup process is DPI-aware, so text stays
+    sharp with display scaling.
+  - **Kept between 9 and 18 pt.** Headings are 1.15× and the title 1.45× the body text.
+  - **Spacing is in multiples of the text size:** line width 35 em, margins, button padding.
+  - **Fitting the screen:** when the window is too tall, it first gets wider (up to 60 em), then
+    the text shrinks (at most to 85 %, never below 9 pt), then the content scrolls. It stays
+    inside the work area (taskbar and panels).
+  - **Resizing re-wraps the text** to the new width.
+- **Checked:**
+  - The user approved it on their desktop.
+  - Measured on simulated 2560×1400, 1366×728 (fits by widening), 1024×600 and 800×560
+    (scrolls).
+  - In the Windows test bottle: Windows' font at 9 pt; same fitting.
+  - **Not yet on a real Windows PC with display scaling.**
+
 ### Uninstall deletes only what setup created (added 2026-11-21)
 
 - **A risk in the released versions:** uninstall deletes the whole install folder
