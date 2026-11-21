@@ -64,6 +64,13 @@ RUNTIME_SHA256_WINDOWS = "e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd
 RUNTIME_ID = f"cpython-{RUNTIME_PYTHON}+{RUNTIME_RELEASE}"
 RUNTIME_MARKER = "FT-ASSISTANT-RUNTIME"      # in <install dir>/python: which runtime this is
 
+# Everything setup and updates make directly in the install folder (with and without .cmd for
+# the Windows launchers). Uninstall removes only these, so other files in the folder are never
+# touched; setup treats a folder holding only these as FT Assistant's own (e.g. a failed earlier
+# install). The setup script reads this line too, so it stays on one line. (models/ holds only
+# the Whisper models; it's removed when nothing else is left in it.)
+OWN_ITEMS = "app app.new app.previous python python.new python.old models install.py install.py.new install.py.previous install.json ft-assistant ft-assistant-settings ft-assistant-uninstall finish-update.cmd python-download.tar.gz"  # noqa: E501
+
 # Linux: the runtime's Tk draws rough (X11 core) fonts. Setup swaps in this build of the same Tk
 # with smooth fonts (made by installer/build-smooth-tk.sh, kept as a pre-release on GitHub).
 SMOOTH_TK_VERSION = "9.0.4"
@@ -529,17 +536,25 @@ def _desktop_entry(name, comment, exec_path, terminal=False, extra=""):
             f"Categories=Utility;Accessibility;\n{extra}")
 
 
-def remove_old_settings_launcher(install_dir):
-    """Delete the pre-0.2.5 settings launcher, but only if it's that small launcher: a real setup
-    file saved in the install folder has the same name on Windows and must be kept."""
+def old_settings_launcher(install_dir):
+    """The pre-0.2.5 settings launcher (ft-assistant-setup), if it's there and really is that small
+    launcher: a setup file saved in the install folder has the same name on Windows (which
+    ignores case) and must be kept. None otherwise."""
     old = Path(install_dir) / ("ft-assistant-setup.cmd" if IS_WINDOWS else "ft-assistant-setup")
     try:
         if old.is_file() and old.stat().st_size < 4096:
             text = old.read_text(encoding="utf-8", errors="replace")
             if "-m ft_assistant.open_setup" in text and "CMDLITERAL" not in text:
-                old.unlink()
+                return old
     except OSError:
         pass
+    return None
+
+
+def remove_old_settings_launcher(install_dir):
+    old = old_settings_launcher(install_dir)
+    if old:
+        old.unlink()
 
 
 def autostart_entry():
@@ -935,6 +950,32 @@ def cmd_finish_runtime(a):
     complete_update(d, load_manifest(d), a.no_start)
 
 
+def own_items(d):
+    """The things in install folder `d` that setup or updates made (see OWN_ITEMS), and that
+    exist. Temporary folders of an interrupted Python download count too, and the pre-0.2.5
+    settings launcher only if it's that small launcher (a setup file saved there has the same
+    name on Windows)."""
+    d = Path(d)
+    names = OWN_ITEMS.split()
+    if IS_WINDOWS:
+        names += [n + ".cmd" for n in ("ft-assistant", "ft-assistant-settings",
+                                       "ft-assistant-uninstall")]
+    found = [d / n for n in names if (d / n).exists() or (d / n).is_symlink()]
+    found += sorted(d.glob("ft-runtime-*"))
+    old = old_settings_launcher(d)
+    return found + ([old] if old else [])
+
+
+def _remove(path):
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def cmd_uninstall(a):
     d = Path(a.dir).expanduser().resolve()
     info = load_manifest(d)
@@ -945,6 +986,7 @@ def cmd_uninstall(a):
         say(f"This removes FT Assistant from {d}:")
         say("the program, its Python, the speech engine, GPU libraries, the Whisper model,")
         say("and its menu and login entries. Claude Code and OpenCode stay installed.")
+        say("Other files in that folder are left as they are.")
         if input("Type yes to uninstall: ").strip().lower() != "yes":
             say("Nothing was removed.")
             return
@@ -958,17 +1000,36 @@ def cmd_uninstall(a):
     unregister_windows_app()
     if not a.keep_settings:
         shutil.rmtree(config_dir(), ignore_errors=True)
+    # Only what setup made: never other files that happen to be in the same folder.
+    models = d / "models"
+    items = [p for p in own_items(d) if p != models]
+    for name in {GPU_MODEL, CPU_MODEL, Path(info.get("model") or GPU_MODEL).name}:
+        _remove(models / name)
+    try:
+        models.rmdir()                     # only if nothing else is in it
+    except OSError:
+        pass
     if IS_WINDOWS:
-        # Windows can't delete the Python that's running this; remove what we can now and let
-        # a small detached command delete the rest a few seconds after we exit.
-        for child in d.iterdir():
-            if child.name != "python":
-                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
-        subprocess.Popen(f'cmd /c ping -n 4 127.0.0.1 >nul & rmdir /s /q "{d}"',
-                         creationflags=0x08000000 | 0x00000008)   # no window, detached
+        # Windows can't delete the Python that's running this; remove the rest now and let a
+        # small detached command delete it a few seconds after we exit (then the folder itself,
+        # but only if it's empty: rmdir without /s).
+        for p in items:
+            if p.name != "python":
+                _remove(p)
+        subprocess.Popen(f'cmd /c ping -n 4 127.0.0.1 >nul & rmdir /s /q "{d / "python"}" '
+                         f'& rmdir "{d}"', creationflags=0x08000000 | 0x00000008)  # detached
+        left = [p for p in d.iterdir() if p.name != "python"]
     else:
-        shutil.rmtree(d, ignore_errors=True)
+        for p in items:
+            _remove(p)
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+        left = list(d.iterdir()) if d.exists() else []
     say("FT Assistant was removed." + (" Your settings were kept." if a.keep_settings else ""))
+    if left:
+        say(f"Other files in {d} were left as they were.")
     say("Claude Code and OpenCode are still installed; remove them separately if you want.")
 
 

@@ -504,7 +504,29 @@ time, and **no GitHub automation** (nothing that may cost money); we build and t
   - In the Windows test bottle: Windows' font at 9 pt; same fitting.
   - **Not yet on a real Windows PC with display scaling.**
 
-### Uninstall deletes only what setup created (added 2026-11-21)
+### Uninstall deletes only what setup created (added and built 2026-11-21)
+
+**Built:**
+- **Uninstall:** `install.py` has `OWN_ITEMS`, one fixed list of everything setup and updates make
+  in the install folder (a list, not `install.json`, so it also works for older installs). Plus
+  temporary `ft-runtime-*` folders, and the old `ft-assistant-setup` launcher only when it's that
+  small launcher.
+  - Uninstall removes only those things, and only FT Assistant's model folders inside
+    `models/`. Then it removes `models/` and the install folder if they're empty.
+  - On Windows, the detached clean-up command deletes `python\` and then the folder with
+    `rmdir` without `/s`, so only when it's empty.
+- **Setup:** a chosen folder that holds anything else gets an "FT Assistant" subfolder (Linux and
+  Windows). "Anything else" excludes FT Assistant's own leftovers (e.g. a failed earlier install),
+  the setup file itself, and an existing install (`install.json`: updated in place).
+  - If that subfolder also holds someone else's files, setup stops and asks for another folder.
+  - The setup script reads `OWN_ITEMS` from the embedded installer, so there's one list.
+- **Tested 2026-11-21:**
+  - Unit tests for a shared folder, the user's own folder, the Windows clean-up command and the
+    setup rule.
+  - Real runs on Linux and in the Windows bottle: setup into a folder holding "My notes.txt" went
+    into "FT Assistant" inside it, and uninstall left exactly "My notes.txt".
+
+The plan as agreed:
 
 - **A risk in the released versions:** uninstall deletes the whole install folder
   (`shutil.rmtree` in `install.py`).

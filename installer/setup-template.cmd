@@ -167,6 +167,29 @@ if [ -z "$DIR" ]; then
 fi
 DIR="${DIR:-$DEFAULT_DIR}"
 DIR="${DIR/#\~/$HOME}"
+# A folder that already has other things in it gets an "FT Assistant" folder of its own inside
+# it, so FT Assistant's files never mix with someone else's (and uninstall can't touch theirs).
+own_folder() {   # $1 is missing, empty, or holds only FT Assistant's own things
+  local f n own=" $(pin OWN_ITEMS) "
+  [ -d "$1" ] || return 0
+  for f in "$1"/* "$1"/.[!.]*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    [ "$(readlink -f "$f")" = "$SELF" ] && continue       # this setup file
+    n="$(basename "$f")"
+    case "$own" in *" $n "*) continue;; esac
+    case "$n" in ft-runtime-*|ft-assistant-setup) continue;; esac
+    return 1
+  done
+  return 0
+}
+if [ ! -f "$DIR/install.json" ] && ! own_folder "$DIR"; then
+  SUB="${DIR%/}/FT Assistant"
+  [ -f "$SUB/install.json" ] || own_folder "$SUB" \
+    || fail "$DIR and $SUB already have other files in them. Run setup again and choose another folder."
+  say "$DIR already has other files in it, so FT Assistant goes into a folder of its own there:"
+  say "  $SUB"
+  DIR="$SUB"
+fi
 mkdir -p "$DIR" 2>/dev/null || fail "Can't create the folder $DIR."
 DIR="$(cd "$DIR" && pwd)"
 FREE_KB=$(df -Pk "$DIR" | awk 'NR==2 {print $4}')
@@ -335,6 +358,28 @@ if (-not $dir) {
   else { $dir = Read-Host "Install to ${default}? Press Enter, or type another folder" }
 }
 if (-not $dir) { $dir = $default }
+# A folder that already has other things in it gets an "FT Assistant" folder of its own inside
+# it, so FT Assistant's files never mix with someone else's (and uninstall can't touch theirs).
+$ownItems = @((Get-Pin 'OWN_ITEMS') -split ' ') + @('ft-assistant.cmd', 'ft-assistant-settings.cmd',
+  'ft-assistant-uninstall.cmd', 'ft-assistant-setup.cmd')
+function Test-OwnFolder($folder) {   # missing, empty, or holding only FT Assistant's own things
+  if (-not (Test-Path -LiteralPath $folder)) { return $true }
+  foreach ($item in @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue)) {
+    if ($item.FullName -eq $env:FT_SETUP_FILE) { continue }          # this setup file
+    if ($ownItems -contains $item.Name -or $item.Name -like 'ft-runtime-*') { continue }
+    return $false
+  }
+  return $true
+}
+if (-not (Test-Path -LiteralPath (Join-Path $dir 'install.json')) -and -not (Test-OwnFolder $dir)) {
+  $sub = Join-Path $dir 'FT Assistant'
+  if (-not (Test-Path -LiteralPath (Join-Path $sub 'install.json')) -and -not (Test-OwnFolder $sub)) {
+    Fail "$dir and $sub already have other files in them. Run setup again and choose another folder."
+  }
+  Say "$dir already has other files in it, so FT Assistant goes into a folder of its own there:"
+  Say "  $sub"
+  $dir = $sub
+}
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $dir = (Resolve-Path $dir).Path
 if (Test-Path (Join-Path $dir 'install.json')) { Say 'FT Assistant is already installed there; it will be repaired/reinstalled.' }

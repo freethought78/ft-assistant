@@ -302,6 +302,52 @@ class Installer(unittest.TestCase):
         inst.main(["uninstall", "--dir", str(self.dir), "--yes", "--keep-settings"])
         self.assertTrue((inst.config_dir() / "vocabulary.txt").exists())
 
+    def make_install(self):
+        """A complete-looking install in self.dir: everything setup makes."""
+        for name in ("app/ft_assistant", "app.previous", "python/bin", "models/small.en"):
+            (self.dir / name).mkdir(parents=True)
+        (self.dir / "models" / "small.en" / "model.bin").write_text("m")
+        (self.dir / "install.py").write_text("# installer")
+        (self.dir / "python-download.tar.gz").write_text("partial")
+        (self.dir / "ft-runtime-abc123").mkdir()
+        launchers = inst.write_launchers(self.dir, gpu=False, model="small.en")
+        inst.save_manifest(self.dir, {"shortcuts": [], "model": str(self.dir / "models" / "small.en")})
+        return launchers
+
+    def test_uninstall_leaves_other_files_in_a_shared_folder(self):
+        self.make_install()
+        (self.dir / "My notes.txt").write_text("mine")
+        (self.dir / "Photos").mkdir()
+        (self.dir / "Photos" / "a.jpg").write_text("jpg")
+        (self.dir / "models" / "my-other-model").mkdir()           # someone else's model
+        # a setup file the user saved here (on Windows it has the old launcher's name)
+        (self.dir / "ft-assistant-setup").write_text((REPO / "installer" / "setup-template.cmd").read_text())
+        inst.main(["uninstall", "--dir", str(self.dir), "--yes"])
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()),
+                         ["My notes.txt", "Photos", "ft-assistant-setup", "models"])
+        self.assertEqual([p.name for p in (self.dir / "models").iterdir()], ["my-other-model"])
+        self.assertTrue((self.dir / "Photos" / "a.jpg").exists())
+
+    def test_uninstall_removes_its_own_folder_when_nothing_else_is_there(self):
+        self.make_install()
+        inst.main(["uninstall", "--dir", str(self.dir), "--yes"])
+        self.assertFalse(self.dir.exists())
+
+    def test_windows_uninstall_never_deletes_the_folder_with_others_files(self):
+        appdata = Path(self.tmp.name) / "Roaming"
+        with mock.patch.object(inst, "IS_WINDOWS", True), \
+                mock.patch.dict(os.environ, {"APPDATA": str(appdata)}), \
+                mock.patch.object(inst, "unregister_windows_app"), \
+                mock.patch.object(inst.subprocess, "Popen") as popen:
+            self.make_install()
+            (self.dir / "My notes.txt").write_text("mine")
+            inst.main(["uninstall", "--dir", str(self.dir), "--yes"])
+        cmd = popen.call_args[0][0]
+        self.assertIn(f'rmdir /s /q "{self.dir / "python"}"', cmd)
+        self.assertIn(f'& rmdir "{self.dir}"', cmd)               # no /s: only if empty
+        self.assertNotIn(f'rmdir /s /q "{self.dir}"', cmd)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["My notes.txt", "python"])
+
     def test_uninstall_refuses_unknown_folder(self):
         with self.assertRaises(SystemExit):
             inst.main(["uninstall", "--dir", str(self.dir), "--yes"])
@@ -373,6 +419,43 @@ class SetupFile(unittest.TestCase):
             r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
         self.assertEqual(r.stdout.split(), [inst.RUNTIME_ID, inst.RUNTIME_SHA256_LINUX,
                                             inst.RUNTIME_MARKER])
+
+    def test_linux_part_uses_a_subfolder_of_a_folder_with_other_files(self):
+        with tempfile.TemporaryDirectory() as t:
+            out = self.built(t)
+            text = out.read_text()
+            start = text.index("own_folder() {")
+            snippet = text[start:text.index("\nfi\n", text.index('if [ ! -f "$DIR/install.json" ]', start)) + 4]
+            pins = self.linux_functions(out)
+
+            def where(d):
+                script = ("say() { echo \"$*\"; }\nfail() { echo FAIL; exit 1; }\n"
+                          f"SELF='{out}'\n" + pins + f"DIR='{d}'\n" + snippet + 'echo "DIR=$DIR"\n')
+                r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+                return r.stdout.strip().splitlines()[-1]
+
+            new = Path(t, "new")
+            self.assertEqual(where(new), f"DIR={new}")                       # doesn't exist yet
+            empty = Path(t, "empty"); empty.mkdir()
+            self.assertEqual(where(empty), f"DIR={empty}")
+            failed = Path(t, "failed"); (failed / "python").mkdir(parents=True)
+            (failed / "python-download.tar.gz").write_text("x")
+            self.assertEqual(where(failed), f"DIR={failed}")                 # an earlier try: ours
+            shared = Path(t, "shared"); shared.mkdir()
+            (shared / "notes.txt").write_text("mine")
+            self.assertEqual(where(shared), f"DIR={shared}/FT Assistant")
+            installed = Path(t, "installed"); installed.mkdir()
+            (installed / "install.json").write_text("{}")
+            (installed / "notes.txt").write_text("mine")
+            self.assertEqual(where(installed), f"DIR={installed}")           # update in place
+            (shared / "FT Assistant").mkdir()
+            (shared / "FT Assistant" / "x.txt").write_text("other")
+            self.assertEqual(where(shared), "FAIL")
+
+    def test_windows_part_uses_a_subfolder_too(self):
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        self.assertIn("function Test-OwnFolder", text)
+        self.assertIn("$sub = Join-Path $dir 'FT Assistant'", text)
 
     def test_linux_part_reuses_its_own_python_only(self):
         with tempfile.TemporaryDirectory() as t:
