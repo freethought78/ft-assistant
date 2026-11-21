@@ -31,6 +31,101 @@ Log out, choose an X11 (\"Xorg\") session at the login screen, and run setup aga
 fi
 [ -n "${DISPLAY:-}" ] || fail "No graphical desktop (X11) was found. Run setup from your desktop."
 
+# FT Assistant's own Python (pinned; the values are in the installer embedded in this file).
+pin() { sed -n "/^#__FT_ASSISTANT_INSTALLER__\$/,\$ s/^$1 = \"\([^\"]*\)\".*/\1/p" "$SELF" | head -n 1; }
+RUNTIME_RELEASE="$(pin RUNTIME_RELEASE)"; RUNTIME_PYTHON="$(pin RUNTIME_PYTHON)"
+RUNTIME_SHA256="$(pin RUNTIME_SHA256_LINUX)"; RUNTIME_MARKER="$(pin RUNTIME_MARKER)"
+RUNTIME_ID="cpython-$RUNTIME_PYTHON+$RUNTIME_RELEASE"
+[ -n "$RUNTIME_RELEASE" ] && [ -n "$RUNTIME_PYTHON" ] || fail "This setup file is damaged. Download it again."
+runtime_ok() {    # $1/python is FT Assistant's own runtime of the pinned version, and it runs
+  [ "$(cat "$1/python/$RUNTIME_MARKER" 2>/dev/null)" = "$RUNTIME_ID" ] && [ ! -e "$1/python/pyvenv.cfg" ] \
+    && [ "$("$1/python/bin/python3" -I -c 'import sys; print(sys.version.split()[0])' 2>/dev/null)" = "$RUNTIME_PYTHON" ]
+}
+DEFAULT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ft-assistant"
+existing_install() {   # an existing install's folder, from the menu or login entry it made
+  local f d
+  for f in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/ft-assistant.desktop" \
+           "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/ft-assistant.desktop"; do
+    [ -f "$f" ] || continue
+    d=$(sed -n 's|^Exec="\{0,1\}\(.*\)/ft-assistant"\{0,1\}$|\1|p' "$f" | head -n 1)
+    [ -n "$d" ] && [ -f "$d/install.json" ] && { echo "$d"; return 0; }
+  done
+  [ -f "$DEFAULT_DIR/install.json" ] && echo "$DEFAULT_DIR"
+  return 0
+}
+EXISTING_DIR="$(existing_install)"
+[ -n "$EXISTING_DIR" ] && DEFAULT_DIR="$EXISTING_DIR"   # updating: offer the same folder
+DIR="${FT_SETUP_DIR:-}"
+
+# ---- where to install: asked first, before anything is installed or downloaded
+pick_folder() {    # a folder window starting at $1: prints the chosen folder. Exit code 0 chosen,
+  local start="$1" # 1 cancelled, anything else: no window could be shown
+  while [ ! -d "$start" ] && [ "$start" != "/" ]; do start="$(dirname "$start")"; done
+  if command -v zenity >/dev/null 2>&1; then          # GNOME, Cinnamon, MATE, Budgie, ...
+    zenity --file-selection --directory --title="Choose where to install FT Assistant" \
+      --filename="${start%/}/" 2>/dev/null
+  elif command -v kdialog >/dev/null 2>&1; then       # KDE
+    kdialog --title "Choose where to install FT Assistant" --getexistingdirectory "$start" 2>/dev/null
+  else
+    return 127
+  fi
+}
+choose_folder() {
+  local answer picked rc
+  while true; do
+    if [ -n "$EXISTING_DIR" ]; then
+      say "FT Assistant is installed in $DEFAULT_DIR"
+      read -r -p "Press Enter to update it there, or C to install it somewhere else: " answer
+    else
+      say "FT Assistant will be installed in $DEFAULT_DIR"
+      say "(in your own user folder, so no administrator password is needed)."
+      read -r -p "Press Enter to use this folder, or C to choose another folder: " answer
+    fi
+    case "$answer" in
+      "") DIR="$DEFAULT_DIR"; return;;
+      [Cc])
+        picked="$(pick_folder "$DEFAULT_DIR")"; rc=$?
+        if [ $rc -eq 0 ] && [ -n "$picked" ]; then DIR="$picked"; return; fi
+        if [ $rc -eq 1 ]; then say "No folder was chosen."; say ""; continue; fi
+        read -r -p "Type the folder to install in (or press Enter to go back): " picked
+        if [ -n "$picked" ]; then DIR="$picked"; return; fi
+        say "";;
+      *) DIR="$answer"; return;;                         # a folder typed straight away
+    esac
+  done
+}
+[ -n "$DIR" ] || choose_folder
+DIR="${DIR/#\~/$HOME}"
+# A folder that already has other things in it gets an "FT Assistant" folder of its own inside
+# it, so FT Assistant's files never mix with someone else's (and uninstall can't touch theirs).
+own_folder() {   # $1 is missing, empty, or holds only FT Assistant's own things
+  local f n own=" $(pin OWN_ITEMS) "
+  [ -d "$1" ] || return 0
+  for f in "$1"/* "$1"/.[!.]*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    [ "$(readlink -f "$f")" = "$SELF" ] && continue       # this setup file
+    n="$(basename "$f")"
+    case "$own" in *" $n "*) continue;; esac
+    case "$n" in ft-runtime-*|ft-assistant-setup) continue;; esac
+    return 1
+  done
+  return 0
+}
+if [ ! -f "$DIR/install.json" ] && ! own_folder "$DIR"; then
+  SUB="${DIR%/}/FT Assistant"
+  [ -f "$SUB/install.json" ] || own_folder "$SUB" \
+    || fail "$DIR and $SUB already have other files in them. Run setup again and choose another folder."
+  say "$DIR already has other files in it, so FT Assistant goes into a folder of its own there:"
+  say "  $SUB"
+  DIR="$SUB"
+fi
+if [ -n "$EXISTING_DIR" ] && [ "$(readlink -m "$DIR")" != "$(readlink -m "$EXISTING_DIR")" ] \
+   && [ ! -f "$DIR/install.json" ]; then
+  say "This makes a second copy of FT Assistant; the one in $EXISTING_DIR stays installed."
+fi
+say ""
+
+
 # ---- reuse what's already on this computer before downloading anything
 PM=""
 for m in apt-get dnf pacman zypper; do command -v "$m" >/dev/null 2>&1 && { PM="$m"; break; }; done
@@ -89,34 +184,9 @@ if [ "$GPU" = "yes" ] && [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -lt 12 ]; then
 fi
 case "${FT_SETUP_GPU:-}" in yes|no) GPU="$FT_SETUP_GPU";; esac   # testing hook
 MODEL="small.en"; [ "$GPU" = "yes" ] && MODEL="large-v3-turbo"
-# FT Assistant's own Python (pinned; the values are in the installer embedded in this file).
-pin() { sed -n "/^#__FT_ASSISTANT_INSTALLER__\$/,\$ s/^$1 = \"\([^\"]*\)\".*/\1/p" "$SELF" | head -n 1; }
-RUNTIME_RELEASE="$(pin RUNTIME_RELEASE)"; RUNTIME_PYTHON="$(pin RUNTIME_PYTHON)"
-RUNTIME_SHA256="$(pin RUNTIME_SHA256_LINUX)"; RUNTIME_MARKER="$(pin RUNTIME_MARKER)"
-RUNTIME_ID="cpython-$RUNTIME_PYTHON+$RUNTIME_RELEASE"
-[ -n "$RUNTIME_RELEASE" ] && [ -n "$RUNTIME_PYTHON" ] || fail "This setup file is damaged. Download it again."
-runtime_ok() {    # $1/python is FT Assistant's own runtime of the pinned version, and it runs
-  [ "$(cat "$1/python/$RUNTIME_MARKER" 2>/dev/null)" = "$RUNTIME_ID" ] && [ ! -e "$1/python/pyvenv.cfg" ] \
-    && [ "$("$1/python/bin/python3" -I -c 'import sys; print(sys.version.split()[0])' 2>/dev/null)" = "$RUNTIME_PYTHON" ]
-}
 GPU_LIBS=pip
 if [ "$GPU" = "yes" ] && ldconfig -p 2>/dev/null | grep -q 'libcublas\.so\.12' \
      && ldconfig -p 2>/dev/null | grep -q 'libcudnn\.so\.9'; then GPU_LIBS=system; fi
-DEFAULT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ft-assistant"
-existing_install() {   # an existing install's folder, from the menu or login entry it made
-  local f d
-  for f in "${XDG_DATA_HOME:-$HOME/.local/share}/applications/ft-assistant.desktop" \
-           "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/ft-assistant.desktop"; do
-    [ -f "$f" ] || continue
-    d=$(sed -n 's|^Exec="\{0,1\}\(.*\)/ft-assistant"\{0,1\}$|\1|p' "$f" | head -n 1)
-    [ -n "$d" ] && [ -f "$d/install.json" ] && { echo "$d"; return 0; }
-  done
-  [ -f "$DEFAULT_DIR/install.json" ] && echo "$DEFAULT_DIR"
-  return 0
-}
-EXISTING_DIR="$(existing_install)"
-[ -n "$EXISTING_DIR" ] && DEFAULT_DIR="$EXISTING_DIR"   # updating: offer the same folder
-DIR="${FT_SETUP_DIR:-}"
 model_on_computer() {    # same places install.py looks (Hugging Face cache, install dir)
   local d
   for d in "${FT_ASSISTANT_MODEL_SOURCE:-}" "${HF_HUB_CACHE:-}" "${HF_HOME:+$HF_HOME/hub}" \
@@ -129,7 +199,7 @@ model_on_computer() {    # same places install.py looks (Hugging Face cache, ins
 
 DL_MB=150; DISK_MB=350
 say "What setup needs:"
-if runtime_ok "${DIR:-$DEFAULT_DIR}"; then
+if runtime_ok "$DIR"; then
   say "  Python runtime (FT Assistant's own)     already in the install folder (reused)"
 else
   say "  Python runtime (FT Assistant's own)     about 70 MB download"; DL_MB=$((DL_MB+70)); DISK_MB=$((DISK_MB+200))
@@ -143,7 +213,7 @@ if [ "$GPU" = "yes" ]; then
     say "  NVIDIA GPU libraries                    about 1.3 GB download  (2.1 GB on disk)"; DL_MB=$((DL_MB+1300)); DISK_MB=$((DISK_MB+2100))
   fi
 fi
-if model_on_computer "${DIR:-$DEFAULT_DIR}"; then
+if model_on_computer "$DIR"; then
   say "$(printf '  %-40s' "Whisper speech model ($MODEL)")already on this computer (reused, no extra disk space)"
 else
   MB=500; SIZE="500 MB"; [ "$GPU" = "yes" ] && { MB=1600; SIZE="1.6 GB"; }
@@ -158,41 +228,12 @@ say "  If you then install Claude Code or OpenCode from the setup window: about 
 say ""
 NEED_KB=$(( (DISK_MB + 300) * 1000 ))
 
-if [ -z "$DIR" ]; then
-  if [ -n "$EXISTING_DIR" ]; then
-    read -r -p "FT Assistant is installed in $DEFAULT_DIR. Press Enter to update it there, or type another folder: " DIR
-  else
-    read -r -p "Install to $DEFAULT_DIR? Press Enter, or type another folder: " DIR
-  fi
-fi
-DIR="${DIR:-$DEFAULT_DIR}"
-DIR="${DIR/#\~/$HOME}"
-# A folder that already has other things in it gets an "FT Assistant" folder of its own inside
-# it, so FT Assistant's files never mix with someone else's (and uninstall can't touch theirs).
-own_folder() {   # $1 is missing, empty, or holds only FT Assistant's own things
-  local f n own=" $(pin OWN_ITEMS) "
-  [ -d "$1" ] || return 0
-  for f in "$1"/* "$1"/.[!.]*; do
-    [ -e "$f" ] || [ -L "$f" ] || continue
-    [ "$(readlink -f "$f")" = "$SELF" ] && continue       # this setup file
-    n="$(basename "$f")"
-    case "$own" in *" $n "*) continue;; esac
-    case "$n" in ft-runtime-*|ft-assistant-setup) continue;; esac
-    return 1
-  done
-  return 0
-}
-if [ ! -f "$DIR/install.json" ] && ! own_folder "$DIR"; then
-  SUB="${DIR%/}/FT Assistant"
-  [ -f "$SUB/install.json" ] || own_folder "$SUB" \
-    || fail "$DIR and $SUB already have other files in them. Run setup again and choose another folder."
-  say "$DIR already has other files in it, so FT Assistant goes into a folder of its own there:"
-  say "  $SUB"
-  DIR="$SUB"
-fi
-mkdir -p "$DIR" 2>/dev/null || fail "Can't create the folder $DIR."
-DIR="$(cd "$DIR" && pwd)"
-FREE_KB=$(df -Pk "$DIR" | awk 'NR==2 {print $4}')
+DIR="$(readlink -m "$DIR")"
+# The folder is only made once setup starts, so cancelling here leaves nothing behind: check the
+# space on the nearest folder that already exists.
+EXISTS="$DIR"; while [ ! -d "$EXISTS" ] && [ "$EXISTS" != "/" ]; do EXISTS="$(dirname "$EXISTS")"; done
+[ -w "$EXISTS" ] || fail "FT Assistant can't write to $EXISTS. Run setup again and choose another folder."
+FREE_KB=$(df -Pk "$EXISTS" | awk 'NR==2 {print $4}')
 [ "${FREE_KB:-0}" -ge "$NEED_KB" ] || fail "Not enough free space in $DIR (needs about $((NEED_KB/1000)) MB)."
 if [ -f "$DIR/install.json" ]; then say "FT Assistant is already installed there; it will be repaired/reinstalled."; fi
 
@@ -200,6 +241,7 @@ if [ -z "${FT_SETUP_YES:-}" ]; then
   read -r -p "Press Enter to start, or Ctrl+C to cancel. " _
 fi
 say ""
+mkdir -p "$DIR" 2>/dev/null || fail "Can't create the folder $DIR."
 
 download_python() {
   rm -rf "$DIR/python"
@@ -328,36 +370,101 @@ function Test-ModelOnComputer($installDir) {
   return $false
 }
 
-$dl = 150; $disk = 350
-$probeDir = if ($env:FT_SETUP_DIR) { $env:FT_SETUP_DIR } else { $default }
-Say 'What setup needs:'
-if (Test-OwnPython $probeDir) { Say "  Python runtime (FT Assistant's own)     already in the install folder (reused)" }
-else { Say "  Python runtime (FT Assistant's own)     about 50 MB download"; $dl += 50; $disk += 150 }
-Say '  Speech engine and audio libraries       about 150 MB download  (350 MB on disk)'
-if ($gpu -eq 'yes') {
-  if ($gpuLibs -eq 'system') { Say '  NVIDIA GPU libraries                    already on this computer (reused)' }
-  else { Say '  NVIDIA GPU libraries                    about 1.3 GB download  (2.1 GB on disk)'; $dl += 1300; $disk += 2100 }
+# ---- where to install: asked before anything is downloaded
+# The usual Windows "Select folder" window (IFileOpenDialog), through a few lines of C# that
+# Windows PowerShell compiles itself; kept to older C# so Windows PowerShell 5.1 can build it.
+$pickerCode = @"
+using System;
+using System.Runtime.InteropServices;
+public static class FTFolderPicker {
+  [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IFileDialog {
+    [PreserveSig] int Show(IntPtr parent);
+    void SetFileTypes(uint count, IntPtr types); void SetFileTypeIndex(uint index); void GetFileTypeIndex(out uint index);
+    void Advise(IntPtr events, out uint cookie); void Unadvise(uint cookie);
+    void SetOptions(uint options); void GetOptions(out uint options);
+    void SetDefaultFolder(IShellItem item); void SetFolder(IShellItem item);
+    void GetFolder(out IShellItem item); void GetCurrentSelection(out IShellItem item);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+    void GetResult(out IShellItem item);
+  }
+  [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IShellItem {
+    void BindToHandler(IntPtr bc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+    void GetParent(out IShellItem parent);
+    void GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
+  }
+  [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")] class FileOpenDialog { }
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+  static extern void SHCreateItemFromParsingName(string path, IntPtr bc, ref Guid riid, out IShellItem item);
+  [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+  // The chosen folder, or "" if the window was cancelled.
+  public static string Pick(string start, string title) {
+    IFileDialog dialog = (IFileDialog)new FileOpenDialog();
+    dialog.SetOptions(0x20 | 0x40 | 0x800);    // pick folders, real folders only, must exist
+    dialog.SetTitle(title);
+    if (!String.IsNullOrEmpty(start)) {
+      try {
+        Guid id = typeof(IShellItem).GUID;
+        IShellItem folder;
+        SHCreateItemFromParsingName(start, IntPtr.Zero, ref id, out folder);
+        dialog.SetFolder(folder);
+      } catch (Exception) { }
+    }
+    int hr = dialog.Show(GetConsoleWindow());
+    if (hr == unchecked((int)0x800704C7)) return "";           // cancelled
+    if (hr != 0) throw new COMException("The folder window failed.", hr);
+    IShellItem result;
+    dialog.GetResult(out result);
+    string path;
+    result.GetDisplayName(0x80058000, out path);                 // the file system path
+    return path;
+  }
 }
-$modelLabel = '  {0,-40}' -f "Whisper speech model ($model)"
-if (Test-ModelOnComputer $probeDir) { Say "${modelLabel}already on this computer (reused)" }
-else {
-  if ($gpu -eq 'yes') { $mb = 1600; $size = '1.6 GB' } else { $mb = 500; $size = '500 MB' }
-  Say "${modelLabel}about $size download  ($size on disk)"; $dl += $mb; $disk += $mb
+"@
+# The chosen folder; '' if the window was cancelled; $null if no window could be shown.
+function Select-Folder($start) {
+  $title = 'Choose where to install FT Assistant'
+  try {
+    if (-not ('FTFolderPicker' -as [type])) { Add-Type -TypeDefinition $pickerCode -ErrorAction Stop }
+    return [FTFolderPicker]::Pick($start, $title)
+  } catch { }
+  try {                                                  # the older tree-style folder window
+    Add-Type -AssemblyName System.Windows.Forms
+    $f = New-Object System.Windows.Forms.FolderBrowserDialog
+    $f.Description = $title; $f.SelectedPath = $start; $f.ShowNewFolderButton = $true
+    if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $f.SelectedPath }
+    return ''
+  } catch { return $null }
 }
-$total = "  Total                                   about $dl MB download, about $disk MB on disk"
-Say ('  ' + ('-' * ($total.Length - 2)))
-Say $total
-Say "  (Packages already in your pip download cache aren't downloaded again.)"
-if ($gpu -ne 'yes') { Say '  No NVIDIA graphics card found, so the smaller model runs on the processor.' }
-Say '  If you then install Claude Code or OpenCode from the setup window: about 350-400 MB more.'
-Say ''
-
+function Read-InstallFolder {
+  while ($true) {
+    if ($existing) {
+      Say "FT Assistant is installed in $default"
+      $answer = Read-Host 'Press Enter to update it there, or C to install it somewhere else'
+    } else {
+      Say "FT Assistant will be installed in $default"
+      Say '(in your own user folder, so no administrator rights are needed).'
+      $answer = Read-Host 'Press Enter to use this folder, or C to choose another folder'
+    }
+    if (-not $answer) { return $default }
+    if ($answer -ne 'c') { return $answer }                     # a folder typed straight away
+    $start = $default
+    while ($start -and -not (Test-Path -LiteralPath $start)) { $start = Split-Path -Parent $start }
+    $picked = Select-Folder $start
+    if ($picked) { return $picked }
+    if ($null -ne $picked) { Say 'No folder was chosen.'; Say ''; continue }
+    $typed = Read-Host 'Type the folder to install in (or press Enter to go back)'
+    if ($typed) { return $typed }
+    Say ''
+  }
+}
 $dir = $env:FT_SETUP_DIR
-if (-not $dir) {
-  if ($existing) { $dir = Read-Host "FT Assistant is installed in ${default}. Press Enter to update it there, or type another folder" }
-  else { $dir = Read-Host "Install to ${default}? Press Enter, or type another folder" }
-}
-if (-not $dir) { $dir = $default }
+if (-not $dir) { $dir = Read-InstallFolder }
 # A folder that already has other things in it gets an "FT Assistant" folder of its own inside
 # it, so FT Assistant's files never mix with someone else's (and uninstall can't touch theirs).
 $ownItems = @((Get-Pin 'OWN_ITEMS') -split ' ') + @('ft-assistant.cmd', 'ft-assistant-settings.cmd',
@@ -380,11 +487,42 @@ if (-not (Test-Path -LiteralPath (Join-Path $dir 'install.json')) -and -not (Tes
   Say "  $sub"
   $dir = $sub
 }
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$dir = (Resolve-Path $dir).Path
+if ($existing -and -not (Test-Path -LiteralPath (Join-Path $dir 'install.json')) -and
+    ([IO.Path]::GetFullPath($dir).TrimEnd('\') -ne [IO.Path]::GetFullPath($existing).TrimEnd('\'))) {
+  Say "This makes a second copy of FT Assistant; the one in $existing stays installed."
+}
+Say ''
+
+$dl = 150; $disk = 350
+Say 'What setup needs:'
+if (Test-OwnPython $dir) { Say "  Python runtime (FT Assistant's own)     already in the install folder (reused)" }
+else { Say "  Python runtime (FT Assistant's own)     about 50 MB download"; $dl += 50; $disk += 150 }
+Say '  Speech engine and audio libraries       about 150 MB download  (350 MB on disk)'
+if ($gpu -eq 'yes') {
+  if ($gpuLibs -eq 'system') { Say '  NVIDIA GPU libraries                    already on this computer (reused)' }
+  else { Say '  NVIDIA GPU libraries                    about 1.3 GB download  (2.1 GB on disk)'; $dl += 1300; $disk += 2100 }
+}
+$modelLabel = '  {0,-40}' -f "Whisper speech model ($model)"
+if (Test-ModelOnComputer $dir) { Say "${modelLabel}already on this computer (reused)" }
+else {
+  if ($gpu -eq 'yes') { $mb = 1600; $size = '1.6 GB' } else { $mb = 500; $size = '500 MB' }
+  Say "${modelLabel}about $size download  ($size on disk)"; $dl += $mb; $disk += $mb
+}
+$total = "  Total                                   about $dl MB download, about $disk MB on disk"
+Say ('  ' + ('-' * ($total.Length - 2)))
+Say $total
+Say "  (Packages already in your pip download cache aren't downloaded again.)"
+if ($gpu -ne 'yes') { Say '  No NVIDIA graphics card found, so the smaller model runs on the processor.' }
+Say '  If you then install Claude Code or OpenCode from the setup window: about 350-400 MB more.'
+Say ''
+
+$dir = [IO.Path]::GetFullPath($dir).TrimEnd('\')
 if (Test-Path (Join-Path $dir 'install.json')) { Say 'FT Assistant is already installed there; it will be repaired/reinstalled.' }
 if (-not $env:FT_SETUP_YES) { Read-Host 'Press Enter to start, or close this window to cancel' | Out-Null }
 Say ''
+# Made only now, so cancelling before this leaves nothing behind.
+try { New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null }
+catch { Fail "Can't create the folder $dir. Run setup again and choose another folder." }
 
 function Get-OwnPython {
   $pyDir = Join-Path $dir 'python'

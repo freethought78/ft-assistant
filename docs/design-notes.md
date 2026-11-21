@@ -544,7 +544,38 @@ The plan as agreed:
   still there, and FT Assistant's are gone. That includes Windows, where the running Python is
   deleted a few seconds after uninstall exits.
 
-### Choosing the install folder with a folder window, before anything is downloaded (added 2026-11-21)
+### Choosing the install folder with a folder window, before anything is downloaded (added and built 2026-11-21)
+
+**Built** (`installer/setup-template.cmd`):
+- **The folder question comes first:**
+  - Linux: right after the 64-bit and desktop checks, before the system packages step (which may
+    use `sudo`).
+  - Windows: before the summary.
+- **Enter** keeps the default with no window. **C** opens the folder window at the default (or
+  its nearest existing parent). **Cancel** asks again. Typing a path at the question still works.
+  Updating an existing install says when another folder would make a second copy.
+- **The windows:**
+  - Linux: `zenity --file-selection --directory`, else `kdialog --getexistingdirectory`, else
+    typing.
+  - Windows: Explorer's "Select folder" window (`IFileOpenDialog` with FOS_PICKFOLDERS through
+    `Add-Type` C#, kept to older C# for Windows PowerShell 5.1), else `FolderBrowserDialog`,
+    else typing.
+- **Then** the subfolder rule, the summary for the chosen folder, and "Press Enter to start". The
+  folder is created only after that, so cancelling leaves nothing behind. The free-space check
+  uses the nearest existing folder.
+- **Tested 2026-11-21:**
+  - Automated: pretend zenity and kdialog (choose, cancel, KDE, typed, updating), and the order
+    of the steps.
+  - The user, on their desktop with zenity: picked a folder holding a file, got the subfolder
+    and the summary, cancelled.
+  - kdialog in a temporary Ubuntu 24.04 container on the user's display: cancel and choose both
+    worked.
+  - Windows bottle: Explorer-style window (Wine's version) opened in the start folder; cancel
+    and choose worked. A full setup into a new folder with a space in its name worked.
+  - **Not yet on a real Windows 10/11 PC** (Windows PowerShell 5.1's C# compiler, the real
+    Explorer look).
+
+The plan as agreed:
 
 **The problem:** setup asks for the install folder as typed text ("Press Enter, or type another
 folder"). Typing a path is awkward, especially when dictating. On Linux the question also comes

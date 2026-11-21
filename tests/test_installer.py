@@ -408,8 +408,9 @@ class SetupFile(unittest.TestCase):
 
     def linux_functions(self, out):
         text = out.read_text()
-        start = text.index("# FT Assistant's own Python (pinned")
-        return text[start:text.index("\nGPU_LIBS=", start)] + "\n"
+        start = text.index("# FT Assistant's own Python (pinned")    # the pins and runtime_ok()
+        end = text.index("\n}\n", text.index("runtime_ok() {", start)) + 3
+        return text[start:end]
 
     def test_linux_part_reads_the_pinned_python(self):
         with tempfile.TemporaryDirectory() as t:
@@ -451,6 +452,77 @@ class SetupFile(unittest.TestCase):
             (shared / "FT Assistant").mkdir()
             (shared / "FT Assistant" / "x.txt").write_text("other")
             self.assertEqual(where(shared), "FAIL")
+
+    def ask_folder(self, answers, tools=(), existing=""):
+        """Run the Linux part's folder question with typed `answers` and pretend folder windows:
+        tools maps "zenity"/"kdialog" to (exit code, printed folder). Returns (DIR, output, the
+        window's arguments)."""
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        start = text.index("# ---- where to install: asked first")
+        block = text[start:text.index('DIR="${DIR/#\\~/$HOME}"', start)]
+        with tempfile.TemporaryDirectory() as t:
+            bindir = Path(t, "bin"); bindir.mkdir()
+            for tool in ("dirname", "cat"):
+                os.symlink(shutil.which(tool), bindir / tool)
+            for name, (code, out) in dict(tools).items():
+                f = bindir / name
+                f.write_text(f'#!/bin/sh\necho "$@" > "{t}/args"\necho "{out}"\nexit {code}\n')
+                f.chmod(0o755)
+            default = Path(t, "home", ".local", "share", "ft-assistant")
+            default.parent.mkdir(parents=True)
+            script = ("say() { printf '%s\\n' \"$*\"; }\n"
+                      f"DEFAULT_DIR='{existing or default}'\nEXISTING_DIR='{existing}'\nDIR=''\n"
+                      + block + 'echo "DIR=$DIR"\n')
+            r = subprocess.run([shutil.which("bash"), "-c", script], input="\n".join(answers) + "\n",
+                               capture_output=True, text=True, env={"PATH": str(bindir)}, timeout=20)
+            args = Path(t, "args").read_text().strip() if Path(t, "args").exists() else ""
+            chosen = r.stdout.strip().splitlines()[-1][4:]
+            return chosen.replace(t, "<t>"), r.stdout.replace(t, "<t>"), args.replace(t, "<t>")
+
+    def test_folder_question_enter_keeps_the_default(self):
+        chosen, out, _ = self.ask_folder([""])
+        self.assertEqual(chosen, "<t>/home/.local/share/ft-assistant")
+        self.assertIn("no administrator password", out)
+
+    def test_folder_window_zenity(self):
+        chosen, _, args = self.ask_folder(["c"], {"zenity": (0, "/media/disk/Programs")})
+        self.assertEqual(chosen, "/media/disk/Programs")
+        self.assertIn("--directory", args)
+        self.assertIn("--filename=<t>/home/.local/share/", args)   # starts at the nearest folder that exists
+
+    def test_folder_window_cancel_asks_again(self):
+        chosen, out, _ = self.ask_folder(["C", ""], {"zenity": (1, "")})
+        self.assertIn("No folder was chosen.", out)
+        self.assertEqual(chosen, "<t>/home/.local/share/ft-assistant")
+
+    def test_folder_window_kdialog_on_kde(self):
+        chosen, _, args = self.ask_folder(["c"], {"kdialog": (0, "/home/x/Apps")})
+        self.assertEqual(chosen, "/home/x/Apps")
+        self.assertIn("--getexistingdirectory <t>/home/.local/share", args)
+
+    def test_without_a_folder_window_the_path_is_typed(self):
+        chosen, out, _ = self.ask_folder(["c", "/opt/typed"])
+        self.assertEqual(chosen, "/opt/typed")
+        chosen, _, _ = self.ask_folder(["/srv/straight-away"])               # typed at once
+        self.assertEqual(chosen, "/srv/straight-away")
+
+    def test_updating_offers_the_existing_install(self):
+        chosen, out, _ = self.ask_folder([""], existing="/data/ft-assistant")
+        self.assertIn("FT Assistant is installed in /data/ft-assistant", out)
+        self.assertEqual(chosen, "/data/ft-assistant")
+
+    def test_folder_is_chosen_before_anything_is_installed(self):
+        text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
+        linux = text[:text.index("#__FT_ASSISTANT_PS__")]
+        self.assertLess(linux.index("[ -n \"$DIR\" ] || choose_folder"), linux.index("check_packages\n"))
+        self.assertLess(linux.index("choose_folder"), linux.index('say "What setup needs:"'))
+        windows = text[text.index("#__FT_ASSISTANT_PS__"):]
+        self.assertLess(windows.index("$dir = Read-InstallFolder"), windows.index("Say 'What setup needs:'"))
+        self.assertIn("dialog.SetOptions(0x20 | 0x40 | 0x800)", windows)   # pick folders
+        # the folder is only made once the user starts setup (cancelling leaves nothing behind)
+        self.assertLess(linux.index("Press Enter to start"), linux.index('mkdir -p "$DIR"'))
+        self.assertLess(windows.index("Press Enter to start"),
+                        windows.index("New-Item -ItemType Directory -Force -Path $dir"))
 
     def test_windows_part_uses_a_subfolder_too(self):
         text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")

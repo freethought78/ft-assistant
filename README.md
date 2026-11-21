@@ -56,9 +56,12 @@ Download `FT-Assistant-setup.cmd` from the
 - **Windows:** double-click it.
 - **Linux:** run `bash FT-Assistant-setup.cmd` in a terminal.
 
-Setup checks your computer, shows exactly what it will download and how big it is, and waits for
-you before downloading anything. On Linux it can install the few system packages it needs
-(`xdotool`, `libnotify`, `portaudio`) after asking for your password.
+Setup first asks where to install: press Enter for the usual place in your user folder, or C to
+pick another folder in a folder window. If that folder already has other files in it, FT Assistant
+goes into an "FT Assistant" folder of its own there. Setup then shows exactly what it will
+download and how big it is, and waits for you before downloading anything. On Linux it can
+install the few system packages it needs (`xdotool`, `libnotify`, `portaudio`) after asking for
+your password.
 
 **Updating or repairing:** the app checks for a new version about once a day and asks you before
 updating (or click "Check for updates" on the setup screen). You can also run the newest setup
