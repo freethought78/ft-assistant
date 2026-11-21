@@ -41,6 +41,14 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   and word list; own settings/log in
   `~/.config/ft-assistant-dev/`, Assistant key Scroll Lock there; **never button 12**, which the
   live tool uses). Tell the user before starting it, and stop it after testing.
+- **Run a branch in place of the live tool:** `./run-branch.sh <branch>` (its latest commit, from
+  a snapshot in `.worktrees/`) or `./run-branch.sh .` (this folder with uncommitted changes); back
+  with `./run-branch.sh --back` or the menu entry "FT Assistant: back to the installed version";
+  `--status` says which is running. It stops the installed copy and runs on button 12, so it
+  **restarts the tool: only with the user's go-ahead**, and confirm the `ready:` line it prints.
+  Own settings (fresh copy of the live ones)/log in `~/.config/ft-assistant-branch/`. If the test
+  build stops by itself, the installed copy restarts automatically; login always starts the
+  installed copy.
 - **Windows testing** uses only the existing Bottles bottle **`DannyRando-Test`** (Flatpak Bottles).
   **One Wine session at a time:** every `bottles-cli run` starts its own sandbox with its own
   wineserver, so two runs at once (e.g. Notepad in one, the app in another) fight over the same

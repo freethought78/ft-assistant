@@ -520,9 +520,32 @@ system, and there's no second Linux install):
   `XDG_CONFIG_HOME` / `XDG_DATA_HOME` pointing to throwaway folders. That way no menu entries,
   login entry or settings of the real install are touched.
 
-### Trying a branch as the live tool (added 2026-11-21)
+### Trying a branch as the live tool (added 2026-11-21, built 2026-11-21)
 
 So the user can test ideas on branches without a release, and without two copies running at once.
+
+**Built** as `run-branch.sh` and `ft_assistant/buildinfo.py`.
+- **Commands:**
+  - `./run-branch.sh <branch>` runs that branch's latest commit, from a detached snapshot in
+    `.worktrees/<branch>`.
+  - `./run-branch.sh .` runs the checkout as it is, with "with uncommitted changes" in the label.
+  - `--back` returns to the installed copy, and `--status` says which copy is running.
+- **How it works:**
+  - It runs the code through `run-dev.sh`, with its own folders (`~/.config/ft-assistant-branch/`
+    and `~/.local/share/ft-assistant-branch/`).
+  - Processes are told apart by their `FT_ASSISTANT_CONFIG_DIR` / `FT_ASSISTANT_DATA_DIR`.
+  - A small supervisor restarts the installed copy if the test build exits without `--back`.
+- **Live-tested by the user (2026-11-21):**
+  - switching to `.`: the setup screen showed "Version 0.3.0 release candidate (next, with
+    uncommitted changes): not a public release";
+  - dictation on button 12;
+  - going back through the menu entry.
+  - The crash fallback: the test build was killed abruptly (`kill -9`), and the installed copy
+    was running again 2 s later, with the menu entry removed.
+- **Found while building:** `run-dev.sh` used the installed copy's data folder, so its setup screen
+  offered "Update now" and "Uninstall..." for the *installed* copy. It now uses its own data folder.
+
+The plan as agreed:
 
 - **One copy runs at a time.** "Run branch X" (done with Claude's help, or a script):
   1. warn that dictation drops out for a few seconds;
@@ -545,8 +568,8 @@ So the user can test ideas on branches without a release, and without two copies
   build (conversation-management): not a public release". The `ready:` log line names the branch
   too.
   - Only when running from a git checkout; installed copies show the plain version.
-  - Proposed wording: "release candidate" for `next`, "test build" for idea branches (to confirm
-    with the user).
+  - Wording: "release candidate" for `next`, "test build" for idea branches (seen and accepted by
+    the user in the live test).
 - **Safety nets:**
   - A menu entry for "Back to the installed version", because a broken build can't be
     dictated to.

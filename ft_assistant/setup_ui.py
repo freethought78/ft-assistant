@@ -13,7 +13,7 @@ import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from . import __version__, config, harness, keys, textproc, updater
+from . import __version__, buildinfo, config, harness, keys, textproc, updater
 from . import plat
 
 CHANGED = 10
@@ -248,7 +248,13 @@ class SetupWindow:
         self.uninstall_btn = ttk.Button(urow, text="Uninstall...", command=self._uninstall,
                                         state="normal" if installed_dir() else "disabled")
         self.uninstall_btn.grid(row=0, column=1, padx=8)
-        ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
+        if buildinfo.is_test_build():
+            # A test build from a branch: on its own line, so it stands out and fits.
+            r += 1
+            ttk.Label(f, text=f"Version {buildinfo.describe()}", wraplength=520,
+                      style="Warn.TLabel").grid(row=r, sticky="w", pady=(4, 0))
+        else:
+            ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
         r += 1
         self.update_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
         self.update_msg.grid(row=r, sticky="w", pady=(4, 2))

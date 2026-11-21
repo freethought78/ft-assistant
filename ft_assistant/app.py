@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import __version__, config, harness, open_setup, textproc, updater
+from . import buildinfo, config, harness, open_setup, textproc, updater
 from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -260,7 +260,7 @@ def main():
     threading.Thread(target=app.worker, daemon=True).start()
     threading.Thread(target=app.update_loop, daemon=True).start()
     trig = settings.trigger
-    log.info("ready: version %s, Assistant key %s, harness %s", __version__,
+    log.info("ready: version %s, Assistant key %s, harness %s", buildinfo.describe(),
              trig.get("keysym") or f"mouse button {trig.get('button')}",
              "dictation only" if settings.dictation_only else (settings.harness or "(not chosen)"))
     print("FT Assistant ready.")
