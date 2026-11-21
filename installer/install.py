@@ -668,26 +668,78 @@ def remove_old_settings_launcher(install_dir):
 
 def autostart_entry():
     """The login entry write_shortcuts makes."""
-    return autostart_dir() / (APP_NAME + ".cmd" if IS_WINDOWS else "ft-assistant.desktop")
+    return autostart_dir() / (APP_NAME + ".lnk" if IS_WINDOWS else "ft-assistant.desktop")
+
+
+def autostart_enabled():
+    """True if FT Assistant starts at login (the user may have removed the entry). Windows
+    installs before 0.3.0 made a .cmd file there instead of a shortcut."""
+    return autostart_entry().exists() or (IS_WINDOWS and (autostart_dir() / (APP_NAME + ".cmd")).exists())
+
+
+# Windows shortcuts are made through WScript.Shell, which every Windows has, in one PowerShell
+# call. The values come in through an environment variable (JSON), so no quoting can break.
+LNK_SCRIPT = (
+    "$ErrorActionPreference = 'Stop'; $w = New-Object -ComObject WScript.Shell; "
+    "foreach ($x in ($env:FT_SHORTCUTS | ConvertFrom-Json)) { "
+    "$s = $w.CreateShortcut($x.path); $s.TargetPath = $x.target; "
+    "$s.WorkingDirectory = $x.workdir; $s.Description = $x.description; "
+    "$s.WindowStyle = $x.style; if ($x.icon) { $s.IconLocation = $x.icon }; $s.Save() }")
+
+
+def create_lnk_files(specs):
+    """Windows: make .lnk shortcuts. Each spec: path, target, workdir, description, style (1
+    normal window, 7 minimized), icon. Raises OSError if PowerShell couldn't make them."""
+    env = dict(os.environ, FT_SHORTCUTS=json.dumps(specs))
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+                        "Bypass", "-Command", LNK_SCRIPT], env=env, capture_output=True,
+                       text=True, timeout=120)
+    missing = [s["path"] for s in specs if not Path(s["path"]).exists()]
+    if r.returncode != 0 or missing:
+        raise OSError(f"couldn't make the shortcuts ({(r.stderr or r.stdout).strip()[:200]})")
 
 
 def write_shortcuts(launchers, autostart=True):
-    """Login entry and app-menu entries (Linux .desktop files; Windows .cmd shortcuts)."""
+    """Login entry and app-menu entries (Linux .desktop files; Windows .lnk shortcuts)."""
     written = []
     if IS_WINDOWS:
-        # Windows shortcuts (.lnk) need a COM helper; plain .cmd files in the Start Menu work.
-        md = menu_dir()
-        md.mkdir(parents=True, exist_ok=True)
-        for label, key in ((APP_NAME, "ft-assistant"), (APP_NAME + " setup", "ft-assistant-settings"),
-                           ("Uninstall " + APP_NAME, "ft-assistant-uninstall")):
-            p = md / (label + ".cmd")
-            p.write_text(f'@call "{launchers[key]}"\r\n', encoding="utf-8")
-            written.append(p)
+        # Real shortcuts (.lnk): the Start menu only lists shortcuts, so the .cmd files made
+        # before 0.3.0 didn't show up there. They start the launchers in a minimized window
+        # (the launchers set FT Assistant's settings, then start it without a window); the
+        # uninstaller asks a question, so it gets a normal window.
+        md, ad = menu_dir(), autostart_dir()
+        d = Path(launchers["ft-assistant"]).parent
+        icon = pythonw_exe(d)
+        items = [(md / (APP_NAME + ".lnk"), "ft-assistant", "Push-to-talk dictation", 7),
+                 (md / (APP_NAME + " setup.lnk"), "ft-assistant-settings",
+                  "Choose your assistant and Assistant key", 7),
+                 (md / ("Uninstall " + APP_NAME + ".lnk"), "ft-assistant-uninstall",
+                  "Remove FT Assistant", 1)]
         if autostart:
-            p = autostart_dir() / (APP_NAME + ".cmd")
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(f'@call "{launchers["ft-assistant"]}"\r\n', encoding="utf-8")
-            written.append(p)
+            items.append((autostart_entry(), "ft-assistant", "Push-to-talk dictation", 7))
+        md.mkdir(parents=True, exist_ok=True)
+        ad.mkdir(parents=True, exist_ok=True)
+        try:
+            create_lnk_files([{"path": str(path), "target": str(launchers[key]), "workdir": str(d),
+                               "description": desc, "style": style,
+                               "icon": f"{icon},0" if icon.exists() else ""}
+                              for path, key, desc, style in items])
+        except (OSError, subprocess.SubprocessError) as e:
+            # Fall back to the old .cmd entries: not listed in the Start menu, but they work.
+            say(f"  Warning: {e}. Making simple entries instead.")
+            written = []
+            for path, key, _desc, _style in items:
+                p = path.with_suffix(".cmd")
+                p.write_text(f'@call "{launchers[key]}"\r\n', encoding="utf-8")
+                written.append(p)
+            return written
+        written = [path for path, *_ in items]
+        # The .cmd entries made before 0.3.0 (Start menu and Startup folder)
+        for old in (md / (APP_NAME + ".cmd"), md / (APP_NAME + " setup.cmd"),
+                    md / ("Uninstall " + APP_NAME + ".cmd"), ad / (APP_NAME + ".cmd")):
+            old.unlink(missing_ok=True)
+        if not autostart:
+            autostart_entry().unlink(missing_ok=True)
         return written
     md = menu_dir()
     md.mkdir(parents=True, exist_ok=True)
@@ -938,7 +990,7 @@ def complete_update(d, info, no_start):
     # only if it's still there: the user may have turned it off).
     try:
         info["shortcuts"] = [str(p) for p in
-                             write_shortcuts(launchers, autostart=autostart_entry().exists())]
+                             write_shortcuts(launchers, autostart=autostart_enabled())]
         save_manifest(d, info)
     except OSError as e:
         say(f"Warning: couldn't update the menu entries ({e}).")

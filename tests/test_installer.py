@@ -134,15 +134,42 @@ class Installer(unittest.TestCase):
             (menu / "FT Assistant setup.cmd").write_text(f'@call "{old}"\r\n')
             inst.autostart_dir().mkdir(parents=True)
             inst.autostart_entry().write_text("@call x\r\n")
+            made = []
+
+            def fake_lnk(specs):
+                for s in specs:
+                    Path(s["path"]).write_text(s["target"])
+                made.extend(specs)
             with mock.patch.object(inst, "install_packages"), mock.patch.object(inst, "start_app"), \
-                    mock.patch.object(inst, "register_windows_app"):
+                    mock.patch.object(inst, "register_windows_app"), \
+                    mock.patch.object(inst, "create_lnk_files", side_effect=fake_lnk):
                 inst.main(["finish-update", "--dir", str(self.dir)])
             self.assertFalse(old.exists())
             new = self.dir / "ft-assistant-settings.cmd"
             self.assertIn("-m ft_assistant.open_setup", new.read_text())
-            self.assertIn(str(new), (menu / "FT Assistant setup.cmd").read_text())
-            self.assertTrue(inst.autostart_entry().exists())        # login entry kept
+            # Real shortcuts now (the Start menu only lists those); the old .cmd entries are gone.
+            self.assertEqual(sorted(p.name for p in menu.iterdir()),
+                             ["FT Assistant setup.lnk", "FT Assistant.lnk", "Uninstall FT Assistant.lnk"])
+            self.assertEqual((menu / "FT Assistant setup.lnk").read_text(), str(new))
+            self.assertTrue(inst.autostart_entry().exists())        # login entry kept, as a .lnk
+            self.assertEqual(inst.autostart_entry().suffix, ".lnk")
+            self.assertFalse((inst.autostart_dir() / "FT Assistant.cmd").exists())
+            styles = {Path(s["path"]).stem: s["style"] for s in made}
+            self.assertEqual(styles["Uninstall FT Assistant"], 1)      # it asks a question
+            self.assertEqual(styles["FT Assistant"], 7)                # minimized
             self.assertEqual(len(inst.load_manifest(self.dir)["shortcuts"]), 4)
+
+    def test_windows_shortcuts_fall_back_to_cmd_entries(self):
+        appdata = Path(self.tmp.name) / "Roaming"
+        with mock.patch.object(inst, "IS_WINDOWS", True), \
+                mock.patch.dict(os.environ, {"APPDATA": str(appdata)}), \
+                mock.patch.object(inst, "create_lnk_files", side_effect=OSError("no PowerShell")):
+            launchers = inst.write_launchers(self.dir, gpu=False, model="m")
+            written = inst.write_shortcuts(launchers, autostart=True)
+        self.assertEqual(sorted(p.name for p in written),
+                         ["FT Assistant setup.cmd", "FT Assistant.cmd", "FT Assistant.cmd",
+                          "Uninstall FT Assistant.cmd"])
+        self.assertTrue(all(p.exists() for p in written))
 
     def test_launchers_and_shortcuts(self):
         launchers = inst.write_launchers(self.dir, gpu=True, model="large-v3-turbo")

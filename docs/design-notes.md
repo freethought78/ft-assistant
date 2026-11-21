@@ -906,6 +906,30 @@ updates, run-branch.sh) can then find it and close it if needed.
     and setup window show their own names.
   - Stopping by name stops only FT Assistant.
 
+### Windows: real Start menu shortcuts (found and built 2026-11-21)
+
+- **The problem:** setup put `.cmd` files into the Start menu folder, and a .cmd file in the
+  Startup folder for login. The Start menu only lists shortcuts, so FT Assistant didn't show up
+  there (a Windows tester couldn't find it).
+- **Now:** `write_shortcuts` makes real `.lnk` shortcuts through WScript.Shell, in one PowerShell
+  call (values passed as JSON in an environment variable).
+  - **The entries:** "FT Assistant", "FT Assistant setup" and "Uninstall FT Assistant" in the
+    Start menu, and "FT Assistant" in Startup (when starting at login is on).
+  - **Windows:** the shortcuts start the launchers minimized, because the launchers set FT
+    Assistant's settings and then start it without a window. Uninstall gets a normal window,
+    because it asks a question.
+  - **The icon** comes from "FT Assistant.exe".
+- **Updates** replace the old .cmd entries (Start menu and Startup), and keep starting at login
+  only if it was on (`autostart_enabled` also recognises the old .cmd).
+- **If the shortcuts can't be made**, setup writes the old .cmd entries instead and warns.
+- **Tested 2026-11-21:**
+  - Unit tests: an update replaces the entries, the window styles, the fallback.
+  - Windows bottle: a fresh install made all four shortcuts with the right targets and icon.
+    Starting "FT Assistant" from its Start menu shortcut ran FT Assistant.exe. The .lnk files
+    store "minimized" (7) and "normal" (1) correctly (Wine's own reader reports 1 for all).
+  - **Not yet on a real Windows PC** (whether the Start menu lists them; it should, as they're
+    standard shortcuts).
+
 ## On the `conversation-management` branch
 
 Built after the work on `next`, on a branch made from `next`; never merged until the user says so.
