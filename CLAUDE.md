@@ -16,7 +16,7 @@ everyone else gets:
 
 | Path | What |
 |---|---|
-| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-settings` (called `ft-assistant-setup` before 0.2.5), `ft-assistant-uninstall`, `install.py`, `install.json`. |
+| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (a venv from the system Python 3.12 until the user installs 0.3.0, whose update moves it to FT Assistant's own pinned Python; old one kept as `python.old` until the app has started), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-settings` (called `ft-assistant-setup` before 0.2.5), `ft-assistant-uninstall`, `install.py`, `install.json`. |
 | `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (**errors only** plus a start-up line since 0.2.0; never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 
@@ -35,6 +35,11 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   `gh release create vX.Y.Z dist/FT-Assistant-setup.cmd` (as freethought78). The app notices
   within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on
   the user's own install worked (2026-11-18).
+- **FT Assistant's own Python is pinned** in `installer/install.py` (`RUNTIME_*`). The Linux
+  setup window's smooth-text Tk is built by hand with `bash installer/build-smooth-tk.sh` (no
+  GitHub automation, the user's decision) and kept on GitHub as the **pre-release**
+  `smooth-tk-<version>` (pre-release, so the update check never sees it). Changing the runtime
+  means rebuilding and re-uploading it; the script's header lists the steps.
 - Only with the user's go-ahead: commits, pushes, releases, and anything that restarts the tool.
 - **Tests:** `python3 -m unittest discover -s tests -t .`
 - **Try a dev build next to the live tool:** `./run-dev.sh` (borrows the install's Python, model

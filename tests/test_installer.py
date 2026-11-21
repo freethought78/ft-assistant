@@ -25,8 +25,12 @@ class Installer(unittest.TestCase):
                                                 "XDG_DATA_HOME": str(t / "data"),
                                                 "FT_ASSISTANT_SOURCE": ""})
         self.env.start()
+        # Most tests are about an install that already has FT Assistant's own Python.
+        self.own_python = mock.patch.object(inst, "runtime_ok", return_value=True)
+        self.own_python.start()
 
     def tearDown(self):
+        self.own_python.stop()
         self.env.stop()
         self.tmp.cleanup()
 
@@ -342,18 +346,58 @@ class SetupFile(unittest.TestCase):
         self.assertIn("function Get-CudaMajor", text)
         self.assertIn("$cudaMajor -lt 12", text)
 
-    def test_windows_python_check_needs_windows(self):
+    def test_never_uses_the_computers_python(self):
         text = (REPO / "installer" / "setup-template.cmd").read_text(encoding="utf-8")
-        probe = [l for l in text.splitlines() if "import sys, venv, ensurepip" in l]
-        self.assertEqual(len(probe), 1)
-        self.assertIn("tkinter.Tk()", probe[0])
+        for gone in ("python3 -m venv", "-m venv", "Find-SystemPython", "python3-venv",
+                     "python3-tk", "releases/latest"):
+            self.assertNotIn(gone, text)
+        self.assertIn("function Test-OwnPython", text)            # Windows: reuse
+        self.assertIn("Get-FileHash -Algorithm SHA256", text)     # Windows: checked download
 
-    def test_built_file(self):
+    def built(self, t):
         spec_b = importlib.util.spec_from_file_location("ft_build", REPO / "installer" / "build.py")
         build = importlib.util.module_from_spec(spec_b)
         spec_b.loader.exec_module(build)
+        return build.build(Path(t, "FT-Assistant-setup.cmd"))
+
+    def linux_functions(self, out):
+        text = out.read_text()
+        start = text.index("# FT Assistant's own Python (pinned")
+        return text[start:text.index("\nGPU_LIBS=", start)] + "\n"
+
+    def test_linux_part_reads_the_pinned_python(self):
         with tempfile.TemporaryDirectory() as t:
-            out = build.build(Path(t, "FT-Assistant-setup.cmd"))
+            out = self.built(t)
+            script = ("fail() { echo FAIL; exit 1; }\n" + f"SELF='{out}'\n" + self.linux_functions(out)
+                      + 'echo "$RUNTIME_ID $RUNTIME_SHA256 $RUNTIME_MARKER"\n')
+            r = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(r.stdout.split(), [inst.RUNTIME_ID, inst.RUNTIME_SHA256_LINUX,
+                                            inst.RUNTIME_MARKER])
+
+    def test_linux_part_reuses_its_own_python_only(self):
+        with tempfile.TemporaryDirectory() as t:
+            out = self.built(t)
+            d = Path(t, "install")
+            py = d / "python" / "bin" / "python3"
+            py.parent.mkdir(parents=True)
+            py.write_text(f"#!/bin/sh\necho {inst.RUNTIME_PYTHON}\n")
+            py.chmod(0o755)
+            check = ("fail() { echo FAIL; exit 1; }\n" + f"SELF='{out}'\n" + self.linux_functions(out)
+                     + f"runtime_ok '{d}' && echo reuse || echo download\n")
+            run = lambda: subprocess.run(["bash", "-c", check], capture_output=True,  # noqa: E731
+                                         text=True).stdout.strip()
+            self.assertEqual(run(), "download")                      # no marker: not ours
+            (d / "python" / inst.RUNTIME_MARKER).write_text(inst.RUNTIME_ID + "\n")
+            self.assertEqual(run(), "reuse")
+            (d / "python" / "pyvenv.cfg").write_text("home = /usr/bin\n")
+            self.assertEqual(run(), "download")                      # a venv of the system Python
+            (d / "python" / "pyvenv.cfg").unlink()
+            (d / "python" / inst.RUNTIME_MARKER).write_text("cpython-3.12.1+20240101\n")
+            self.assertEqual(run(), "download")                      # an older runtime
+
+    def test_built_file(self):
+        with tempfile.TemporaryDirectory() as t:
+            out = self.built(t)
             text = out.read_text()
             self.assertTrue(text.startswith(':<<"::CMDLITERAL"\n@echo off'))
             self.assertLess(out.stat().st_size, 100_000)

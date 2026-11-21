@@ -351,9 +351,46 @@ Documented only; no code yet. Sorted by branch (2026-11-21).
 ## On `next`
 
 Order: 1. FT Assistant's own Python (the user's first choice); 2. uninstall safety; 3. the folder
-window; 4. trying a branch as the live tool; 5. the voice commands window.
+window; 4. trying a branch as the live tool (built first, at the user's request); 5. the voice
+commands window. Added later (2026-11-21), after item 1: the installer's file name, and the
+"FT Assistant" process name.
 
-### FT Assistant always uses its own Python, and reuses it (added 2026-11-21)
+### FT Assistant always uses its own Python, and reuses it (added and built 2026-11-21)
+
+**Built** (`installer/install.py`, `installer/setup-template.cmd`, `installer/build-smooth-tk.sh`):
+- **The runtime is pinned** in install.py (`RUNTIME_RELEASE`, `RUNTIME_PYTHON`, SHA-256s). The
+  setup script reads those lines from the copy of install.py embedded in it, so there's one
+  source.
+- **Downloads are checked** against the SHA-256 before use. The runtime folder gets a marker file
+  (`FT-ASSISTANT-RUNTIME`).
+- **Reuse:** setup reuses `<install dir>/python` when the marker matches, it isn't a venv, and it
+  runs the pinned version.
+- **Moving over:** an update moves any other install (a venv, or an older download):
+  1. It builds `python.new` and installs the packages into it.
+  2. Linux: it renames the folders. Windows: a helper window (`finish-update.cmd`) waits until
+     the old Python has exited, then swaps them and runs `install.py finish-runtime`.
+  3. `python.old` is deleted once FT Assistant logs `ready:` again; otherwise it's kept.
+  4. A failure before the swap leaves everything as it was.
+- **Smooth text:** setup swaps the smooth Tk into the runtime (`ensure_smooth_tk`) before
+  anything opens a window. The setup window always uses FT Assistant's own Python (`gui.py`
+  removed).
+- **Tested 2026-11-21, all in throwaway folders:**
+  - Linux fresh install with the real pinned download: 47 s with pip's cache. It transcribed on
+    the GPU, and Tk drew smooth text.
+  - Linux rerun: the Python was reused, nothing downloaded.
+  - Linux update of a 0.2.8-style install on a system-Python venv (with the real 0.2.8
+    installer): moved over, and the app imports under the new Python.
+  - Windows (bottle) fresh install with the real download and Get-FileHash check, then a rerun:
+    reused.
+  - Windows update of a 0.2.8-style install: moved over through the helper window, leaving no
+    `python.old` or `python.new` behind.
+- **Still to do before release:**
+  - Upload the smooth Tk as the pre-release `smooth-tk-9.0.4` (tests used the local file via
+    `FT_SETUP_SMOOTH_TK`).
+  - With a real 0.2.8 install on Windows, the old update window asks for Enter before it
+    closes. The helper waits up to about 30 minutes and says so.
+
+The plan as agreed:
 
 **Decided by the user:** FT Assistant always runs on its own Python runtime, kept in
 `<install dir>/python` and managed entirely by setup and the updater. It never uses or depends on
@@ -692,6 +729,68 @@ optional (off by default) instead of the main mechanism. That's simpler to under
 - On `next`: the button, the window, "<word> help" and "<word> stop".
 - On the `conversation-management` branch: "<word> new topic". The window gets that line from
   there, so the list on `next` shows only the commands that work there.
+
+### The installer is called "FT Assistant Installer" (added 2026-11-21)
+
+**Decided by the user:** the file people download is named for what it is. On the GitHub Releases
+page, and everywhere in the project, it's **FT Assistant Installer**.
+
+- **File name:** `FT-Assistant-Installer.cmd`. GitHub turns spaces in uploaded file names into
+  dots ("FT.Assistant.Installer.cmd"), so hyphens keep it readable. Release titles and the README
+  call it "FT Assistant Installer".
+- **Why it helps:** "setup" currently means two things. `FT-Assistant-setup.cmd` is the
+  installer, while "FT Assistant setup" (the menu entry, "Assistant setup") is the settings
+  screen. After this, "setup" only means the settings screen.
+- **What changes:**
+  - `installer/build.py` (output name);
+  - the README's download and run instructions;
+  - text that names the file: the repair notice in the Linux launcher, install.py's help text, and
+    the release notes;
+  - the release steps in CLAUDE.md (`gh release create ... dist/FT-Assistant-Installer.cmd`).
+- **Not affected:** the built-in updater, which downloads the release's source zip, not this file.
+- **Moving over:** links to `releases/latest/download/FT-Assistant-setup.cmd` (e.g. in older
+  messages to testers) would break. Attach the file under both names for one or two releases,
+  then only the new one.
+- **Check:** no name clash with the launchers in the install folder (`ft-assistant`,
+  `ft-assistant-settings`, `ft-assistant-uninstall`). Windows ignores upper and lower case: that
+  was the 0.2.5 bug.
+
+### The running program is called "FT Assistant", not python or pythonw (added 2026-11-21)
+
+**Decided by the user:** in Task Manager, System Monitor, `ps` and similar, the running program shows
+as **FT Assistant** instead of `python`, `python3` or `pythonw`. Users and FT Assistant itself (setup,
+updates, run-branch.sh) can then find it and close it if needed.
+
+- **Builds on FT Assistant's own Python** (item 1): the names are given to copies inside its own
+  runtime folder, never to a Python the user has.
+- **Windows:**
+  - A program's name comes from its .exe file. Setup copies the runtime's `pythonw.exe` as
+    `FT Assistant.exe` in the same folder (next to `python312.dll`, which it needs), and the
+    launchers start that.
+  - Task Manager's main list shows the file's *description* ("Python"), so the copy's version
+    information is changed too (`UpdateResourceW` through ctypes; no extra tools).
+  - The speech worker (started per dictation) and the setup window get their own names, e.g.
+    `FT Assistant speech.exe` and `FT Assistant settings.exe`, so each one is clear.
+  - Setup and the updater can then find FT Assistant by program name, instead of searching
+    command lines for `-m ft_assistant` (slow through PowerShell).
+- **Linux:**
+  - The process name (what `top`, System Monitor, `pgrep` and `pkill` use; 15 characters at
+    most) is set at start with `prctl(PR_SET_NAME)`, through ctypes. Names: `ft-assistant`, and
+    e.g. `ft-asst-speech` / `ft-asst-setup` for the worker and the setup window.
+  - Optionally the launcher also starts Python through a link named `ft-assistant` in the runtime
+    folder, so the full command line (`ps -f`) starts with that name too.
+- **Then update everything that finds the program:**
+  - the restart command in CLAUDE.md (`pkill -f '... -m [f]t_assistant'`);
+  - `run-branch.sh`'s process search;
+  - setup's `Stop-RunningApp`;
+  - `install.py`'s `is_ft_assistant`.
+
+  Keep the old command-line match as a fallback for copies started by older versions.
+- **Test:**
+  - Linux: `pgrep -x ft-assistant` finds it, and System Monitor shows the name.
+  - Windows (bottle, then a real PC): Task Manager shows "FT Assistant", and the speech worker
+    and setup window show their own names.
+  - Stopping by name stops only FT Assistant.
 
 ## On the `conversation-management` branch
 

@@ -38,32 +38,14 @@ pkg_name() {   # generic name -> this system's package name
   case "$PM:$1" in
     apt-get:notify) echo libnotify-bin;;  dnf:notify|pacman:notify) echo libnotify;;  zypper:notify) echo libnotify-tools;;
     apt-get:portaudio) echo libportaudio2;;  *:portaudio) echo portaudio;;
-    dnf:tk) echo python3-tkinter;;  pacman:tk) echo tk;;  *:tk) echo python3-tk;;
-    apt-get:venv) echo python3-venv;;  *:venv) echo python3;;
     *) echo "$1";;
   esac
 }
-py_ok() {      # the system Python is a version the speech engine supports (3.9 to 3.13)
-  command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; assert (3, 9) <= sys.version_info[:2] <= (3, 13)' 2>/dev/null
-}
-py_venv() {    # ... and can make a private package folder (venv with pip)
-  python3 -c 'import venv, ensurepip' >/dev/null 2>&1
-}
-smooth_tk() {  # ... and its Tk draws smooth (Xft) fonts
-  command -v python3 >/dev/null 2>&1 && python3 - <<'PYEOF' >/dev/null 2>&1
-import sys, tkinter
-assert sys.version_info >= (3, 8)
-r = tkinter.Tk(); r.withdraw()
-assert str(r.tk.call("::tk::pkgconfig", "get", "fontsystem")) == "xft"
-PYEOF
-}
 check_packages() {
-  NEEDED=(); OPTIONAL=(); WHY=()
+  NEEDED=()
   for c in curl tar xdotool; do command -v "$c" >/dev/null 2>&1 || NEEDED+=("$(pkg_name "$c")"); done
   command -v notify-send >/dev/null 2>&1 || NEEDED+=("$(pkg_name notify)")
   ldconfig -p 2>/dev/null | grep -q 'libportaudio\.so\.2' || NEEDED+=("$(pkg_name portaudio)")
-  if py_ok && ! py_venv; then OPTIONAL+=("$(pkg_name venv)"); WHY+=("reuse this computer's Python, saving a 70 MB download"); fi
-  if ! smooth_tk; then OPTIONAL+=("$(pkg_name tk)"); WHY+=("clear, smooth text in the setup window"); fi
 }
 install_cmd() {
   case "$PM" in
@@ -72,13 +54,10 @@ install_cmd() {
   esac
 }
 check_packages
-if [ ${#NEEDED[@]} -gt 0 ] || [ ${#OPTIONAL[@]} -gt 0 ]; then
-  ALL=("${NEEDED[@]}" "${OPTIONAL[@]}")
-  say "Some system packages are missing:"
-  [ ${#NEEDED[@]} -gt 0 ] && say "  needed:      ${NEEDED[*]}"
-  for i in "${!OPTIONAL[@]}"; do say "  recommended: ${OPTIONAL[$i]}  (${WHY[$i]})"; done
+if [ ${#NEEDED[@]} -gt 0 ]; then
+  say "Some system packages are missing: ${NEEDED[*]}"
   if [ -n "$PM" ]; then
-    CMD="$(install_cmd "${ALL[@]}")"
+    CMD="$(install_cmd "${NEEDED[@]}")"
     say "They can be installed now with:  $CMD"
     ANSWER="n"
     if [ -z "${FT_SETUP_YES:-}" ]; then
@@ -94,7 +73,6 @@ if [ ${#NEEDED[@]} -gt 0 ] || [ ${#OPTIONAL[@]} -gt 0 ]; then
     fail "These are still missing: ${NEEDED[*]}
 Install them (${CMD:-with the package manager}), then run setup again."
   fi
-  [ ${#OPTIONAL[@]} -gt 0 ] && say "Continuing without ${OPTIONAL[*]}."
   say ""
 fi
 
@@ -111,7 +89,16 @@ if [ "$GPU" = "yes" ] && [ -n "$CUDA_MAJOR" ] && [ "$CUDA_MAJOR" -lt 12 ]; then
 fi
 case "${FT_SETUP_GPU:-}" in yes|no) GPU="$FT_SETUP_GPU";; esac   # testing hook
 MODEL="small.en"; [ "$GPU" = "yes" ] && MODEL="large-v3-turbo"
-PY_SOURCE=standalone; py_ok && py_venv && PY_SOURCE=system
+# FT Assistant's own Python (pinned; the values are in the installer embedded in this file).
+pin() { sed -n "/^#__FT_ASSISTANT_INSTALLER__\$/,\$ s/^$1 = \"\([^\"]*\)\".*/\1/p" "$SELF" | head -n 1; }
+RUNTIME_RELEASE="$(pin RUNTIME_RELEASE)"; RUNTIME_PYTHON="$(pin RUNTIME_PYTHON)"
+RUNTIME_SHA256="$(pin RUNTIME_SHA256_LINUX)"; RUNTIME_MARKER="$(pin RUNTIME_MARKER)"
+RUNTIME_ID="cpython-$RUNTIME_PYTHON+$RUNTIME_RELEASE"
+[ -n "$RUNTIME_RELEASE" ] && [ -n "$RUNTIME_PYTHON" ] || fail "This setup file is damaged. Download it again."
+runtime_ok() {    # $1/python is FT Assistant's own runtime of the pinned version, and it runs
+  [ "$(cat "$1/python/$RUNTIME_MARKER" 2>/dev/null)" = "$RUNTIME_ID" ] && [ ! -e "$1/python/pyvenv.cfg" ] \
+    && [ "$("$1/python/bin/python3" -I -c 'import sys; print(sys.version.split()[0])' 2>/dev/null)" = "$RUNTIME_PYTHON" ]
+}
 GPU_LIBS=pip
 if [ "$GPU" = "yes" ] && ldconfig -p 2>/dev/null | grep -q 'libcublas\.so\.12' \
      && ldconfig -p 2>/dev/null | grep -q 'libcudnn\.so\.9'; then GPU_LIBS=system; fi
@@ -142,10 +129,11 @@ model_on_computer() {    # same places install.py looks (Hugging Face cache, ins
 
 DL_MB=150; DISK_MB=350
 say "What setup needs:"
-if [ "$PY_SOURCE" = "system" ]; then
-  say "  Python runtime                          already on this computer (reused)"
+if runtime_ok "${DIR:-$DEFAULT_DIR}"; then
+  say "  Python runtime (FT Assistant's own)     already in the install folder (reused)"
 else
-  say "  Python runtime                          about 70 MB download"; DL_MB=$((DL_MB+70)); DISK_MB=$((DISK_MB+200))
+  say "  Python runtime (FT Assistant's own)     about 70 MB download"; DL_MB=$((DL_MB+70)); DISK_MB=$((DISK_MB+200))
+  say "  Smooth text for the setup window        about 2 MB download"; DL_MB=$((DL_MB+2))
 fi
 say "  Speech engine and audio libraries       about 150 MB download  (350 MB on disk)"
 if [ "$GPU" = "yes" ]; then
@@ -191,41 +179,36 @@ fi
 say ""
 
 download_python() {
-  say "  Downloading the Python runtime (about 70 MB):"
   rm -rf "$DIR/python"
-  if [ -n "${FT_SETUP_PYTHON_TARBALL:-}" ]; then
+  if [ -n "${FT_SETUP_PYTHON_TARBALL:-}" ]; then              # testing hook
     tar -xzf "$FT_SETUP_PYTHON_TARBALL" -C "$DIR" || fail "Couldn't unpack the Python runtime."
   else
-    URL=$(curl -fsSL https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest \
-      | grep -o '"browser_download_url": *"[^"]*cpython-3\.12\.[0-9]*\(+\|%2B\)[0-9]*-x86_64-unknown-linux-gnu-install_only\.tar\.gz"' \
-      | head -n 1 | sed 's/.*"\(https[^"]*\)"$/\1/')
-    [ -n "$URL" ] || fail "Couldn't find the Python download. Check your internet connection and try again."
-    curl -fL --progress-bar "$URL" | tar -xz -C "$DIR" || fail "The Python download failed. Try again."
+    say "  Downloading Python $RUNTIME_PYTHON for FT Assistant (about 70 MB):"
+    ARCHIVE="$DIR/python-download.tar.gz"
+    curl -fL --progress-bar -o "$ARCHIVE" \
+      "https://github.com/astral-sh/python-build-standalone/releases/download/$RUNTIME_RELEASE/cpython-$RUNTIME_PYTHON%2B$RUNTIME_RELEASE-x86_64-unknown-linux-gnu-install_only.tar.gz" \
+      || { rm -f "$ARCHIVE"; fail "The Python download failed. Check your internet connection and try again."; }
+    [ "$(sha256sum "$ARCHIVE" | cut -d' ' -f1)" = "$RUNTIME_SHA256" ] \
+      || { rm -f "$ARCHIVE"; fail "The Python download is damaged (wrong checksum). Try again."; }
+    tar -xzf "$ARCHIVE" -C "$DIR" || { rm -f "$ARCHIVE"; fail "Couldn't unpack the Python runtime."; }
+    rm -f "$ARCHIVE"
   fi
+  printf '%s\n' "$RUNTIME_ID" > "$DIR/python/$RUNTIME_MARKER"
 }
 run_installer() {
   PYTHONNOUSERSITE=1 "$DIR/python/bin/python3" "$DIR/install.py" install --dir "$DIR" --gpu "$GPU" \
-    --gpu-libs "$GPU_LIBS" --python-source "$PY_SOURCE" "$@"
+    --gpu-libs "$GPU_LIBS" --python-source standalone "$@"
 }
 
 sed -n '/^#__FT_ASSISTANT_INSTALLER__$/,$p' "$SELF" | tail -n +2 > "$DIR/install.py"
 say "Step 2 of 6: Python"
-if [ "$PY_SOURCE" = "system" ]; then
-  say "  Using this computer's Python ($(python3 -c 'import sys; print(sys.version.split()[0])')): making a private package folder..."
-  rm -rf "$DIR/python"
-  python3 -m venv "$DIR/python" || PY_SOURCE=standalone
+if runtime_ok "$DIR"; then
+  say "  FT Assistant's own Python $RUNTIME_PYTHON is already there (reused, nothing downloaded)."
+else
+  download_python
 fi
-[ "$PY_SOURCE" = "standalone" ] && download_python
 run_installer "$@"
 RC=$?
-if [ $RC -eq 3 ] && [ "$PY_SOURCE" = "system" ]; then
-  say ""
-  say "This computer's Python can't be used for FT Assistant; using a downloaded Python instead."
-  PY_SOURCE=standalone
-  download_python
-  run_installer "$@"
-  RC=$?
-fi
 [ $RC -eq 0 ] || say "Setup didn't finish (error $RC). You can run it again; it picks up where it left off."
 exit $RC
 #__FT_ASSISTANT_PS__
@@ -281,29 +264,26 @@ function Find-ExistingInstall {
 $existing = Find-ExistingInstall
 if ($existing) { $default = $existing }
 
-# ---- reuse what's already on this computer before downloading anything
-function Find-SystemPython {
-  # A real Python 3.9-3.13 with venv (not the Microsoft Store placeholder).
-  $cands = @()
-  if (Get-Command py -ErrorAction SilentlyContinue) {
-    foreach ($v in '3.12', '3.13', '3.11', '3.10', '3.9') {
-      try { $exe = (& py "-$v" -c 'import sys; print(sys.executable)' 2>$null); if ($exe) { $cands += $exe.Trim() } } catch { }
-    }
-  }
-  $p = Get-Command python -ErrorAction SilentlyContinue
-  if ($p -and $p.Source -notmatch 'WindowsApps') { $cands += $p.Source }
-  foreach ($exe in $cands) {
-    try {
-      # ... that can also open windows (the setup screen needs Tcl/Tk, an optional part of the
-      # python.org installer). The installer checks this again before installing anything.
-      & $exe -c 'import sys, venv, ensurepip; assert (3, 9) <= sys.version_info[:2] <= (3, 13); import tkinter; r = tkinter.Tk(); r.withdraw(); r.update_idletasks(); r.destroy()' 2>$null
-      if ($LASTEXITCODE -eq 0) { return $exe }
-    } catch { }
-  }
+# ---- FT Assistant's own Python (pinned; the values are in the installer embedded in this file)
+$text = [IO.File]::ReadAllText($env:FT_SETUP_FILE)
+function Get-Pin($name) {
+  if ($text -match ('(?m)^' + $name + ' = "([^"]*)"')) { return $Matches[1] }
   return $null
 }
-$sysPy = Find-SystemPython
-$pySource = if ($sysPy) { 'system' } else { 'standalone' }
+$rtRelease = Get-Pin 'RUNTIME_RELEASE'; $rtPython = Get-Pin 'RUNTIME_PYTHON'
+$rtSha = Get-Pin 'RUNTIME_SHA256_WINDOWS'; $rtMarker = Get-Pin 'RUNTIME_MARKER'
+if (-not $rtRelease -or -not $rtPython -or -not $rtMarker) { Fail 'This setup file is damaged. Download it again.' }
+$rtId = "cpython-$rtPython+$rtRelease"
+# True if <folder>\python is FT Assistant's own runtime of the pinned version, and it runs.
+function Test-OwnPython($folder) {
+  $py = Join-Path $folder 'python\python.exe'
+  $marker = Join-Path $folder "python\$rtMarker"
+  if (-not (Test-Path -LiteralPath $marker) -or -not (Test-Path -LiteralPath $py)) { return $false }
+  if ((Get-Content -LiteralPath $marker -Raw).Trim() -ne $rtId) { return $false }
+  if (Test-Path -LiteralPath (Join-Path $folder 'python\pyvenv.cfg')) { return $false }
+  try { $v = (& $py -I -c 'import sys; print(sys.version.split()[0])' 2>$null) } catch { return $false }
+  return ("$v".Trim() -eq $rtPython)
+}
 $gpuLibs = 'pip'
 function Test-OnPath($file) {
   foreach ($d in ($env:PATH -split ';')) { if ($d -and (Test-Path -LiteralPath (Join-Path $d $file))) { return $true } }
@@ -326,15 +306,15 @@ function Test-ModelOnComputer($installDir) {
 }
 
 $dl = 150; $disk = 350
+$probeDir = if ($env:FT_SETUP_DIR) { $env:FT_SETUP_DIR } else { $default }
 Say 'What setup needs:'
-if ($pySource -eq 'system') { Say "  Python runtime                          already on this computer (reused)" }
-else { Say '  Python runtime                          about 50 MB download'; $dl += 50; $disk += 150 }
+if (Test-OwnPython $probeDir) { Say "  Python runtime (FT Assistant's own)     already in the install folder (reused)" }
+else { Say "  Python runtime (FT Assistant's own)     about 50 MB download"; $dl += 50; $disk += 150 }
 Say '  Speech engine and audio libraries       about 150 MB download  (350 MB on disk)'
 if ($gpu -eq 'yes') {
   if ($gpuLibs -eq 'system') { Say '  NVIDIA GPU libraries                    already on this computer (reused)' }
   else { Say '  NVIDIA GPU libraries                    about 1.3 GB download  (2.1 GB on disk)'; $dl += 1300; $disk += 2100 }
 }
-$probeDir = if ($env:FT_SETUP_DIR) { $env:FT_SETUP_DIR } else { $default }
 $modelLabel = '  {0,-40}' -f "Whisper speech model ($model)"
 if (Test-ModelOnComputer $probeDir) { Say "${modelLabel}already on this computer (reused)" }
 else {
@@ -361,26 +341,29 @@ if (Test-Path (Join-Path $dir 'install.json')) { Say 'FT Assistant is already in
 if (-not $env:FT_SETUP_YES) { Read-Host 'Press Enter to start, or close this window to cancel' | Out-Null }
 Say ''
 
-function Get-StandalonePython {
-  Say '  Downloading the Python runtime (about 50 MB)...'
+function Get-OwnPython {
   $pyDir = Join-Path $dir 'python'
   if (Test-Path $pyDir) { Remove-Item -Recurse -Force $pyDir }
-  $tgz = Join-Path $env:TEMP 'ft-assistant-python.tar.gz'
-  if ($env:FT_SETUP_PYTHON_TARBALL) { $tgz = $env:FT_SETUP_PYTHON_TARBALL } else {
-    $rel = Invoke-RestMethod -UseBasicParsing 'https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest'
-    $asset = $rel.assets | Where-Object { $_.name -match '^cpython-3\.12\.\d+\+\d+-x86_64-pc-windows-msvc-install_only\.tar\.gz$' } | Select-Object -First 1
-    if (-not $asset) { Fail "Couldn't find the Python download. Check your internet connection and try again." }
-    Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $tgz
+  $given = $env:FT_SETUP_PYTHON_TARBALL                     # testing hook
+  if ($given) { $tgz = $given } else {
+    Say "  Downloading Python $rtPython for FT Assistant (about 50 MB)..."
+    $tgz = Join-Path $dir 'python-download.tar.gz'
+    $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$rtRelease/cpython-$rtPython%2B$rtRelease-x86_64-pc-windows-msvc-install_only.tar.gz"
+    $ProgressPreference = 'SilentlyContinue'                # much faster in Windows PowerShell
+    try { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tgz }
+    catch { Remove-Item -Force $tgz -ErrorAction SilentlyContinue; Fail 'The Python download failed. Check your internet connection and try again.' }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $tgz).Hash.ToLower() -ne $rtSha) {
+      Remove-Item -Force $tgz -ErrorAction SilentlyContinue
+      Fail 'The Python download is damaged (wrong checksum). Try again.'
+    }
   }
   tar -xzf $tgz -C $dir
-  if ($LASTEXITCODE -ne 0) { Fail "Couldn't unpack the Python runtime." }
-}
-function Get-PythonExe {
-  $venv = Join-Path $dir 'python\Scripts\python.exe'
-  if (Test-Path $venv) { return $venv } else { return (Join-Path $dir 'python\python.exe') }
+  $unpacked = $LASTEXITCODE
+  if (-not $given) { Remove-Item -Force $tgz -ErrorAction SilentlyContinue }
+  if ($unpacked -ne 0) { Fail "Couldn't unpack the Python runtime." }
+  Set-Content -LiteralPath (Join-Path $pyDir $rtMarker) -Value $rtId -Encoding ASCII
 }
 
-$text = [IO.File]::ReadAllText($env:FT_SETUP_FILE)
 $mark = '#__FT_ASSISTANT_' + 'INSTALLER__'
 $code = $text.Substring($text.IndexOf("`n" + $mark) + $mark.Length + 2)
 [IO.File]::WriteAllText((Join-Path $dir 'install.py'), $code)
@@ -415,24 +398,10 @@ Say 'Step 2 of 6: Python'
 $env:PYTHONNOUSERSITE = '1'
 $extra = @()
 if ($env:FT_SETUP_INSTALL_ARGS) { $extra = $env:FT_SETUP_INSTALL_ARGS -split ' ' }   # testing hook
-if ($pySource -eq 'system') {
-  Say "  Using this computer's Python ($sysPy): making a private package folder..."
-  $pyDir = Join-Path $dir 'python'
-  if (Test-Path $pyDir) { Remove-Item -Recurse -Force $pyDir }
-  & $sysPy -m venv $pyDir
-  if ($LASTEXITCODE -ne 0) { $pySource = 'standalone' }
-}
-if ($pySource -eq 'standalone') { Get-StandalonePython }
-& (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource @extra
+if (Test-OwnPython $dir) { Say "  FT Assistant's own Python $rtPython is already there (reused, nothing downloaded)." }
+else { Get-OwnPython }
+& (Join-Path $dir 'python\python.exe') (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source standalone @extra
 $rc = $LASTEXITCODE
-if ($rc -eq 3 -and $pySource -eq 'system') {
-  Say ''
-  Say "This computer's Python can't be used for FT Assistant; using a downloaded Python instead."
-  $pySource = 'standalone'
-  Get-StandalonePython
-  & (Get-PythonExe) (Join-Path $dir 'install.py') install --dir $dir --gpu $gpu --gpu-libs $gpuLibs --python-source $pySource @extra
-  $rc = $LASTEXITCODE
-}
 if ($rc -ne 0) { Say "Setup didn't finish (error $rc). You can run it again." }
 exit $rc
 #__FT_ASSISTANT_INSTALLER__

@@ -23,6 +23,7 @@ Testing hooks (environment):
   XDG_CONFIG_HOME / XDG_DATA_HOME  where settings and menu/login entries go (Linux)"""
 
 import argparse
+import hashlib
 import io
 import json
 import re
@@ -30,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.request
@@ -49,6 +51,26 @@ WINDOWS_PACKAGES = []                       # the Windows layer uses ctypes only
 # 12.9.3.13 has no Windows build; 12.9.2.10 is the newest cuBLAS built for both systems.
 GPU_PACKAGES = ["nvidia-cublas-cu12==" + ("12.9.2.10" if IS_WINDOWS else "12.9.3.13"),
                 "nvidia-cudnn-cu12==9.28.1.4"]
+
+# FT Assistant's own Python: a python-build-standalone runtime, pinned so every install gets the
+# same one (the setup script reads these lines from the copy of this file embedded in it). It
+# lives in <install dir>/python and FT Assistant never uses another Python on the computer.
+# Changing the runtime: update all five values (SHA-256s from the release's SHA256SUMS), then
+# rebuild the smooth Tk below for the new runtime's Tk version (installer/build-smooth-tk.sh).
+RUNTIME_RELEASE = "20261110"
+RUNTIME_PYTHON = "3.12.16"
+RUNTIME_SHA256_LINUX = "c2f87d4b4e8db3abddb0f116c6ccfc503d0cbdbb9ee8faacddad1b679ec12e99"
+RUNTIME_SHA256_WINDOWS = "e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b"
+RUNTIME_ID = f"cpython-{RUNTIME_PYTHON}+{RUNTIME_RELEASE}"
+RUNTIME_MARKER = "FT-ASSISTANT-RUNTIME"      # in <install dir>/python: which runtime this is
+
+# Linux: the runtime's Tk draws rough (X11 core) fonts. Setup swaps in this build of the same Tk
+# with smooth fonts (made by installer/build-smooth-tk.sh, kept as a pre-release on GitHub).
+SMOOTH_TK_VERSION = "9.0.4"
+SMOOTH_TK_FILE = "libtcl9tk9.0-xft-9.0.4-x86_64-linux.so"
+SMOOTH_TK_SHA256 = "3a79154d35e26c888dfba836f2ea8f1af3d9aa8fef168c7a16b5fd1dd24ada07"
+SMOOTH_TK_URL = (f"https://github.com/{GITHUB_REPO}/releases/download/"
+                 f"smooth-tk-{SMOOTH_TK_VERSION}/{SMOOTH_TK_FILE}")
 
 
 def say(msg=""):
@@ -100,6 +122,157 @@ def pythonw_exe(install_dir):
     return python_exe(install_dir).with_name("pythonw.exe")
 
 
+# ---------------------------------------------------------------- FT Assistant's own Python
+
+def runtime_dir(install_dir):
+    return Path(install_dir) / "python"
+
+
+def runtime_python(pydir):
+    """The python executable of a runtime folder (the standalone layout, not a venv's)."""
+    return Path(pydir) / ("python.exe" if IS_WINDOWS else "bin/python3")
+
+
+def runtime_id(pydir):
+    try:
+        return (Path(pydir) / RUNTIME_MARKER).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def runtime_ok(pydir):
+    """True if `pydir` is FT Assistant's own pinned runtime (not a venv made from the computer's
+    Python, nor an older download) and it runs."""
+    pydir = Path(pydir)
+    if runtime_id(pydir) != RUNTIME_ID or (pydir / "pyvenv.cfg").exists():
+        return False
+    try:
+        r = subprocess.run([str(runtime_python(pydir)), "-I", "-c",
+                            "import sys; print(sys.version.split()[0])"],
+                           capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and r.stdout.strip() == RUNTIME_PYTHON
+
+
+def runtime_archive_name():
+    plat = "pc-windows-msvc" if IS_WINDOWS else "unknown-linux-gnu"
+    return f"{RUNTIME_ID}-x86_64-{plat}-install_only.tar.gz"
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def download(url, dest, sha256=None):
+    """Download `url` to `dest` (a few progress dots), checking its SHA-256 if given."""
+    req = urllib.request.Request(url, headers={"User-Agent": "FT-Assistant-installer"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+        total, done, dots = int(r.headers.get("Content-Length") or 0), 0, 0
+        while True:
+            block = r.read(1 << 20)
+            if not block:
+                break
+            f.write(block)
+            done += len(block)
+            if total and done * 20 // total > dots:
+                dots = done * 20 // total
+                print(".", end="", flush=True)
+    if total:
+        print(flush=True)
+    if sha256 and _sha256(dest) != sha256:
+        Path(dest).unlink()
+        raise RuntimeError(f"the download from {url} is damaged (wrong checksum); try again")
+
+
+def fetch_runtime(pydir):
+    """Put the pinned Python runtime into `pydir` (which must not exist yet). The archive comes
+    from python-build-standalone on GitHub, or FT_SETUP_PYTHON_TARBALL (testing hook)."""
+    pydir = Path(pydir)
+    given = os.environ.get("FT_SETUP_PYTHON_TARBALL")
+    tmp = Path(tempfile.mkdtemp(prefix="ft-runtime-", dir=pydir.parent))
+    try:
+        if given:
+            archive = Path(given)
+        else:
+            archive = tmp / runtime_archive_name()
+            url = (f"https://github.com/astral-sh/python-build-standalone/releases/download/"
+                   f"{RUNTIME_RELEASE}/{runtime_archive_name().replace('+', '%2B')}")
+            say(f"  Downloading Python {RUNTIME_PYTHON} (about {50 if IS_WINDOWS else 70} MB)")
+            download(url, archive, RUNTIME_SHA256_WINDOWS if IS_WINDOWS else RUNTIME_SHA256_LINUX)
+        with tarfile.open(archive) as tar:
+            try:
+                tar.extractall(tmp / "unpacked", filter="data")
+            except TypeError:                      # Python without extraction filters
+                tar.extractall(tmp / "unpacked")
+        (tmp / "unpacked" / "python").rename(pydir)
+        (pydir / RUNTIME_MARKER).write_text(RUNTIME_ID + "\n", encoding="utf-8")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+TK_PROBE = ("import tkinter; r = tkinter.Tk(); r.withdraw(); "
+            "print(r.tk.call('info', 'patchlevel'), r.tk.call('::tk::pkgconfig', 'get', "
+            "'fontsystem')); r.destroy()")
+
+
+def tk_info(py):
+    """(Tk version, font system) of a Python, opening (and at once closing) a hidden window;
+    None if it can't open one."""
+    try:
+        r = subprocess.run([str(py), "-I", "-c", TK_PROBE], capture_output=True, text=True,
+                           timeout=60, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    parts = r.stdout.split()
+    return (parts[0], parts[1]) if r.returncode == 0 and len(parts) == 2 else None
+
+
+def ensure_smooth_tk(pydir):
+    """Linux: make the runtime's Tk draw with the desktop's smooth fonts, by swapping in our build
+    of the same Tk version (see installer/build-smooth-tk.sh). The original is kept as
+    libtcl9tk9.0.so.rough and put back if the smooth one doesn't work here (e.g. libXft missing),
+    so the setup window always opens. Never fails the install. Returns "smooth", "rough", or
+    "n/a" (Windows, whose Tk already draws smooth text)."""
+    if IS_WINDOWS:
+        return "n/a"
+    pydir = Path(pydir)
+    py = runtime_python(pydir)
+    lib = pydir / "lib" / "libtcl9tk9.0.so"
+    rough = lib.with_name(lib.name + ".rough")
+    info = tk_info(py)
+    if info and info[1] == "xft":
+        return "smooth"
+    if not lib.exists() or (info and info[0] != SMOOTH_TK_VERSION):
+        return "rough"
+    new = lib.with_name(lib.name + ".smooth")
+    try:
+        given = os.environ.get("FT_SETUP_SMOOTH_TK")      # testing hook: a local file
+        if given:
+            shutil.copyfile(given, new)
+        else:
+            say("  Downloading smooth text for the setup window (about 2 MB)")
+            download(SMOOTH_TK_URL, new, SMOOTH_TK_SHA256)
+        if not rough.exists():
+            shutil.copy2(lib, rough)
+        os.replace(new, lib)
+    except Exception as e:
+        new.unlink(missing_ok=True)
+        say(f"  Couldn't get smooth text for the setup window ({e}); it uses plain text.")
+        return "rough"
+    info = tk_info(py)
+    if info and info[1] == "xft":
+        return "smooth"
+    shutil.copy2(rough, lib)                   # didn't work here: put the original back
+    say("  Smooth text doesn't work on this computer (libXft missing?); the setup window uses "
+        "plain text.")
+    return "rough"
+
+
 class PackagesFailed(RuntimeError):
     """pip couldn't install the packages (e.g. no ready-made build for this Python version)."""
 
@@ -133,10 +306,10 @@ def can_draw_windows(py):
     return r.returncode == 0
 
 
-def install_packages(install_dir, gpu, gpu_libs="pip"):
+def install_packages(install_dir, gpu, gpu_libs="pip", py=None):
     """pip keeps its download cache in the user's shared pip cache, so packages already
     downloaded for any other project are reused instead of downloaded again."""
-    py = python_exe(install_dir)
+    py = py or python_exe(install_dir)
     pkgs = COMMON_PACKAGES + (WINDOWS_PACKAGES if IS_WINDOWS else LINUX_PACKAGES)
     pip_gpu = gpu and gpu_libs == "pip"
     if pip_gpu:
@@ -533,6 +706,7 @@ def cmd_install(a):
     gpu = a.gpu == "yes"
     d.mkdir(parents=True, exist_ok=True)
     stop_running_app()
+    ensure_smooth_tk(runtime_dir(d))        # before anything opens a window
     if not can_draw_windows(python_exe(d)):
         if a.python_source == "system":
             say("This computer's Python can't open windows (its Tcl/Tk part is missing), so the")
@@ -552,12 +726,14 @@ def cmd_install(a):
     model = str(install_model(d, gpu))       # folder with the model's files
     step(6, "Adding menu entries and finishing")
     copy_self(d)
+    (d / "install.py.new").unlink(missing_ok=True)     # fetch_app's copy, only used by updates
     launchers = write_launchers(d, gpu, model, a.gpu_libs)
     shortcuts = write_shortcuts(launchers, autostart=not a.no_autostart)
     register_windows_app(d, launchers, app_version(d))
     write_vocabulary()
     save_manifest(d, {"installed": time.strftime("%Y-%m-%d %H:%M"), "gpu": gpu, "model": model,
-                      "gpu_libs": a.gpu_libs, "python": a.python_source, "source": label,
+                      "gpu_libs": a.gpu_libs, "python": a.python_source,
+                      "runtime": runtime_id(runtime_dir(d)), "source": label,
                       "shortcuts": [str(p) for p in shortcuts]})
     say("")
     say(f"{APP_NAME} is installed in {d}")
@@ -602,9 +778,17 @@ def cmd_update(a):
     finish_update(d, a.no_start)
 
 
+HANDED_OVER = 20      # exit code: the update goes on in another window (Windows, new Python)
+
+
 def finish_update(d, no_start=False):
-    """Second half of an update, run by the new installer: packages, launchers, restart."""
+    """Second half of an update, run by the new installer: packages, launchers, restart.
+    An install that doesn't have FT Assistant's own pinned Python yet (one made from the
+    computer's Python, or an older download) is moved over to it first."""
     info = load_manifest(d)
+    if not runtime_ok(runtime_dir(d)):
+        move_to_own_python(d, info, no_start)
+        return
     try:
         step(2, "Updating the speech engine (only what changed is downloaded)", total=2)
         install_packages(d, info.get("gpu", False), info.get("gpu_libs", "pip"))
@@ -614,6 +798,12 @@ def finish_update(d, no_start=False):
         start_app(write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
                                   info.get("gpu_libs", "pip")))
         raise SystemExit(1)
+    ensure_smooth_tk(runtime_dir(d))
+    complete_update(d, info, no_start)
+
+
+def complete_update(d, info, no_start):
+    """The end of every update: launchers, menu entries, restart."""
     info["updated"] = time.strftime("%Y-%m-%d %H:%M")
     save_manifest(d, info)
     launchers = write_launchers(d, info.get("gpu", False), info.get("model", CPU_MODEL),
@@ -627,13 +817,122 @@ def finish_update(d, no_start=False):
     except OSError as e:
         say(f"Warning: couldn't update the menu entries ({e}).")
     register_windows_app(d, launchers, app_version(d))
-    if not no_start:
+    # Before 0.3.0 the setup window could borrow the computer's Python, with copies of two small
+    # packages for it in the settings folder; no longer used.
+    shutil.rmtree(config_dir() / "vendor", ignore_errors=True)
+    old_python = d / "python.old"
+    if no_start:
+        shutil.rmtree(old_python, ignore_errors=True)
+    else:
+        before = ready_count()
         start_app(launchers)
+        if old_python.exists():
+            # The previous Python is kept until the new one has started FT Assistant.
+            if wait_ready(before):
+                shutil.rmtree(old_python, ignore_errors=True)
+            else:
+                say(f"FT Assistant didn't report that it started; the previous Python is kept in "
+                    f"{old_python}.")
     say("Updated. The previous version is kept in app.previous for rollback.")
+
+
+def ready_count():
+    try:
+        text = (config_dir() / "ft-assistant.log").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return text.count(" ready: ")
+
+
+def wait_ready(before, seconds=90):
+    """True once FT Assistant has logged a new "ready:" line (it started)."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if ready_count() > before:
+            return True
+        time.sleep(1)
+    return False
+
+
+def move_to_own_python(d, info, no_start):
+    """Move an install onto FT Assistant's own pinned Python. The new one is prepared next to the
+    old one (python.new) and only swapped in once it works; the old one is kept until FT
+    Assistant has started with the new one. The computer's own Python isn't touched."""
+    old_kind = "this computer's Python" if (d / "python" / "pyvenv.cfg").exists() \
+        else "an older Python download"
+    say("FT Assistant now always uses its own Python, kept in its install folder, instead of")
+    say(f"{old_kind}. This update sets that up once: Python itself is about "
+        f"{50 if IS_WINDOWS else 70} MB to download,")
+    say("and the speech engine is installed into it again (packages already in pip's download")
+    say("cache aren't downloaded again). Nothing outside the install folder is changed.")
+    gpu, gpu_libs = info.get("gpu", False), info.get("gpu_libs", "pip")
+    new = d / "python.new"
+    shutil.rmtree(new, ignore_errors=True)
+    try:
+        step(2, "Getting FT Assistant's own Python", total=3)
+        fetch_runtime(new)
+        ensure_smooth_tk(new)
+        step(3, "Installing the speech engine into it", total=3)
+        install_packages(d, gpu, gpu_libs, py=runtime_python(new))
+    except Exception as e:
+        shutil.rmtree(new, ignore_errors=True)
+        _rollback(d)
+        say(f"Update failed ({e}); the previous version was put back.")
+        start_app(write_launchers(d, gpu, info.get("model", CPU_MODEL), gpu_libs))
+        raise SystemExit(1)
+    info["python"], info["runtime"] = "standalone", RUNTIME_ID
+    save_manifest(d, info)
+    if IS_WINDOWS:
+        # Windows can't rename a folder while a program in it runs, and this installer runs from
+        # the old Python: a small script swaps the folders once it has exited, then the new Python
+        # finishes the update.
+        helper = d / "finish-update.cmd"
+        # Its window waits for Enter at the end so the result can be read (not in unattended
+        # test runs, FT_SETUP_YES).
+        start = (" --no-start" if no_start else "") + \
+            ("" if os.environ.get("FT_SETUP_YES") else " --pause")
+        helper.write_text("\r\n".join([
+            "@echo off",
+            "title FT Assistant update",
+            f'cd /d "{d}"',
+            "echo Finishing the FT Assistant update...",
+            "set /a TRIES=0",
+            ":wait",
+            'move "python" "python.old" >nul 2>&1 && goto moved',
+            "set /a TRIES+=1",
+            "if %TRIES% equ 3 echo Waiting for the other FT Assistant update window to close...",
+            "if %TRIES% geq 900 goto failed",
+            "ping -n 3 127.0.0.1 >nul",
+            "goto wait",
+            ":moved",
+            'move "python.new" "python" >nul || (move "python.old" "python" >nul & goto failed)',
+            f'"python\\python.exe" "install.py" finish-runtime --dir "{d}"{start}',
+            '(goto) 2>nul & del "%~f0"',
+            ":failed",
+            "echo The old Python is still in use, so the update couldn't finish. Restart the",
+            "echo computer and run this file again: " + str(helper),
+            "pause",
+        ]) + "\r\n", encoding="utf-8")
+        subprocess.Popen(["cmd", "/c", str(helper)], creationflags=0x10)   # its own window
+        say("")
+        say("Almost done: the update finishes in a new window once this one is closed.")
+        say("(If this window asks you to press Enter, press it.)")
+        raise SystemExit(HANDED_OVER)
+    # Linux: a running program doesn't stop a folder from being renamed.
+    shutil.rmtree(d / "python.old", ignore_errors=True)
+    (d / "python").rename(d / "python.old")
+    new.rename(d / "python")
+    complete_update(d, info, no_start)
 
 
 def cmd_finish_update(a):
     finish_update(Path(a.dir).expanduser().resolve(), a.no_start)
+
+
+def cmd_finish_runtime(a):
+    """Windows: the last part of moving to the own Python, run by the new Python."""
+    d = Path(a.dir).expanduser().resolve()
+    complete_update(d, load_manifest(d), a.no_start)
 
 
 def cmd_uninstall(a):
@@ -691,19 +990,26 @@ def main(argv=None):
     f = sub.add_parser("finish-update")
     f.add_argument("--dir", required=True)
     f.add_argument("--no-start", action="store_true")
+    fr = sub.add_parser("finish-runtime")
+    fr.add_argument("--dir", required=True)
+    fr.add_argument("--no-start", action="store_true")
     x = sub.add_parser("uninstall")
     x.add_argument("--dir", required=True)
     x.add_argument("--keep-settings", action="store_true")
     x.add_argument("--yes", action="store_true")
-    for sp in (i, u, f, x):
+    for sp in (i, u, f, fr, x):
         sp.add_argument("--pause", action="store_true",
                         help="wait for Enter at the end (when run in its own window)")
     a = p.parse_args(argv)
+    handed_over = False
     try:
         {"install": cmd_install, "update": cmd_update, "finish-update": cmd_finish_update,
-         "uninstall": cmd_uninstall}[a.command](a)
+         "finish-runtime": cmd_finish_runtime, "uninstall": cmd_uninstall}[a.command](a)
+    except SystemExit as e:
+        handed_over = e.code == HANDED_OVER
+        raise
     finally:
-        if a.pause:
+        if a.pause and not handed_over:
             input("\nPress Enter to close this window. ")
 
 
