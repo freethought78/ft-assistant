@@ -336,6 +336,383 @@ tool's model was untouched.
    Startup folder and "Settings → Apps" registration. Those need a real Windows machine before a
    public release.
 
+## Planned (not started)
+
+Documented only; no code yet. Sorted by branch (2026-11-21).
+
+**Plan for the work:**
+1. The user reviews these plans.
+2. Everything under "On `next`" is built and tested on `next`, starting with FT Assistant's own
+   Python, then released from `main` as usual.
+3. The `conversation-management` branch is then made from `next`, so it has all of that,
+   including the branch label and the switch for trying it as the live tool.
+4. It stays separate until the user says to merge it.
+
+## On `next`
+
+Order: 1. FT Assistant's own Python (the user's first choice); 2. uninstall safety; 3. the folder
+window; 4. trying a branch as the live tool; 5. the voice commands window.
+
+### FT Assistant always uses its own Python, and reuses it (added 2026-11-21)
+
+**Decided by the user:** FT Assistant always runs on its own Python runtime, kept in
+`<install dir>/python` and managed entirely by setup and the updater. It never uses or depends on
+another Python on the computer, and never adds anything to one.
+
+- **Today:** setup prefers the computer's own Python when it's a suitable version, and builds a
+  private package folder (venv) from it in `<install dir>/python`.
+  - The packages go into that folder, not into the user's Python, but the install still depends on
+    that Python. Upgrading or removing it can break FT Assistant.
+  - On Linux, setup may also offer to install the system package `python3-venv` "to reuse this
+    computer's Python". That's a change to the system the user may not want to keep.
+- **Change for new installs:**
+  - Setup always uses the standalone runtime from python-build-standalone (Python 3.12).
+  - Remove the system-Python path: `py_ok`/`py_venv`, the `python3-venv` offer and
+    `PY_SOURCE=system` on Linux; `Find-SystemPython` and `$pySource = 'system'` on Windows; the
+    "can't use this computer's Python, downloading one instead" fallback (exit code 3).
+  - `install.py --python-source` keeps accepting `system` only so it can read old installs.
+- **Reuse instead of downloading again** (seen on a Windows tester's PC): every run of
+  `FT-Assistant-setup.cmd` over an existing install deleted `<install dir>/python` and downloaded
+  the runtime again (about 50 MB on Windows, 70 MB on Linux). It did this even when a working
+  copy was already there from earlier attempts. The Whisper model and NVIDIA libraries were
+  correctly reused.
+  - The cause is that `Get-StandalonePython` and `download_python` in `installer/setup-template.cmd`
+    always delete the folder first.
+  - New behaviour: if `<install dir>/python` is the standalone runtime (`install.json`
+    `"python": "standalone"`) and its `python.exe` / `bin/python3` runs and reports 3.12, reuse it.
+  - Download only when it's missing, broken, or the old system-based venv.
+  - The "What setup needs" summary says "already in the install folder (reused)" when it will be
+    reused.
+  - Optionally keep the downloaded archive until setup succeeds, so a failed unpack doesn't
+    download it again.
+  - The built-in updater ("Update now" / `install.py update`) already keeps the existing Python;
+    only running the setup file again re-downloaded it.
+- **Moving existing installs over** (in the next release or one soon after):
+  1. When an update sees `"python": "system"` in `install.json`, it downloads the standalone
+     runtime into `python.new` and installs FT Assistant's packages into it. pip's download
+     cache usually has them already, including the large NVIDIA libraries.
+  2. Only once that works does it swap the folders: the old one becomes `python.old` for rollback,
+     and `python.new` becomes `python`.
+  3. It then updates `install.json` and restarts FT Assistant. `python.old` is deleted after a
+     successful start, or by the next update.
+  4. On Windows a running Python can't rename its own folder, so the swap has to happen from the new
+     Python (or a small helper) after the old one has exited.
+  5. Tell the user what happened in plain words, including the extra download size beforehand,
+     and say that their own Python wasn't touched.
+  6. The developer's own Linux install is one of these (system Python 3.12 venv). `run-dev.sh`
+     borrows that Python, so it keeps working after the switch.
+- **Test:**
+  - Run setup twice over the same folder on Linux and in the Windows test bottle. The second run
+    must not download Python.
+  - With a deliberately broken `python` folder, setup must download a fresh copy.
+  - Update an install made from a system Python (Linux venv, Windows venv): afterwards it runs on
+    the standalone runtime, has no link to the system Python, and still dictates. Rolling back
+    to `python.old` must work.
+
+### Uninstall deletes only what setup created (added 2026-11-21)
+
+- **A risk in the released versions:** uninstall deletes the whole install folder
+  (`shutil.rmtree` in `install.py`).
+  - Setup installs straight into whatever folder is typed. Typing an existing folder such as
+    `E:\` or `Documents` puts FT Assistant's files among the user's own.
+  - A later uninstall would then delete everything else in that folder too.
+- **Fix, in two halves:**
+  1. **Uninstall** removes only what setup created. `install.json` lists it: `app/`, `python/`,
+     `models/`, the launchers, `install.py`, `install.json` and their `.old` rollback copies.
+     The folder itself is removed only if it's empty afterwards.
+  2. **Setup** installs into an "FT Assistant" subfolder of any chosen folder that isn't empty
+     and isn't already an install (part of the folder-window plan below; can ship earlier on its
+     own).
+- **Test:** install into a folder that has other files in it, then uninstall. The other files are
+  still there, and FT Assistant's are gone. That includes Windows, where the running Python is
+  deleted a few seconds after uninstall exits.
+
+### Choosing the install folder with a folder window, before anything is downloaded (added 2026-11-21)
+
+**The problem:** setup asks for the install folder as typed text ("Press Enter, or type another
+folder"). Typing a path is awkward, especially when dictating. On Linux the question also comes
+after the system packages step, which may already download and install packages with `sudo`.
+
+**Proposed flow** (the first question setup asks, before Step 1's package installs and before
+Python or anything else is downloaded):
+
+1. Setup explains the default location in plain words and asks one question in the terminal:
+   - New install: "FT Assistant will be installed in <default> (your user folder, no admin rights
+     needed). Press Enter to use this folder, or C to choose another folder."
+   - Existing install found: "FT Assistant is installed in <folder>. Press Enter to update it
+     there, or C to install somewhere else." (Choosing elsewhere warns that this makes a second
+     copy.)
+2. **Enter:** no folder window at all; the default is used.
+3. **C:** a folder window opens, already showing the default location (or its nearest existing
+   parent folder). The user can pick any existing folder or make a new one in the window.
+4. **Cancel in the folder window** goes back to the question; it never ends setup.
+5. Only then come the "What setup needs" summary and the downloads. The summary is worked out
+   for the chosen folder: whether a speech model is already there, and the free-space check on
+   that drive.
+
+**The folder window, using only what's already on the computer** (Python isn't downloaded yet):
+- **Windows:** the normal Explorer-style "Select folder" window (`IFileOpenDialog` with
+  `FOS_PICKFOLDERS`), through a few lines of C# compiled by PowerShell's built-in `Add-Type`.
+  - Fallback: .NET's `FolderBrowserDialog` (older tree-style window).
+  - Needs PowerShell's STA mode (`powershell -STA`).
+- **Linux:** kept deliberately simple. Setup tries these in order and uses the first one found:
+  1. `zenity --file-selection --directory`: installed by default on Mint, Ubuntu, Fedora and
+     most GNOME/GTK desktops;
+  2. `kdialog --getexistingdirectory`: KDE;
+  3. the typed path, as today, when neither is installed. This is common on XFCE and on minimal
+     installs.
+
+  No extra packages are installed for this, and no harder routes are attempted: for example the
+  desktop portal over D-Bus works on more desktops but is much more complicated.
+- **Linux without a desktop (terminal only):** FT Assistant can't work there at all, because it
+  types into windows on an X11 desktop. Setup already stops right at the start with "No
+  graphical desktop (X11) was found. Run setup from your desktop." So the folder question never
+  comes up without a display. The typed path stays as the fallback when no window tool is
+  installed, or the window fails to open.
+- **Testing and unattended runs:** `FT_SETUP_DIR` / `FT_SETUP_YES` still skip every question.
+
+**Where the files go in the chosen folder (a safety rule):**
+- If the chosen folder is empty, or already an FT Assistant install (`install.json`), install
+  right there.
+- Otherwise, install into a new **"FT Assistant"** subfolder inside it, and say so: "FT Assistant
+  will be installed in E:\Programs\FT Assistant".
+- **Why:** see "Uninstall deletes only what setup created" above. The subfolder rule is the
+  setup half of that fix.
+- The chosen folder must be writable. Setup tests this before going on and asks again if it
+  isn't.
+
+**Test** (agreed with the user 2026-11-21: nothing extra is installed on the developer's Linux
+system, and there's no second Linux install):
+- **Cases on every path:**
+  - default by Enter;
+  - picking an empty folder, a non-empty folder (subfolder created) and an existing install
+    (updates in place);
+  - cancel, then choose again;
+  - uninstall after installing into a non-empty folder leaves the other files there untouched.
+- **Linux, zenity:** real test on the developer's desktop (Mint/Cinnamon has zenity).
+- **Linux, typed path:** real test, running setup with a PATH that only has the tools it needs
+  symlinked in, so zenity and kdialog aren't found. That's the same method as the GPU-check test
+  in `tests/test_installer.py`. Nothing is uninstalled.
+- **Linux, kdialog:**
+  - **Automated:** a pretend `kdialog` script on that PATH that answers like the real one (prints
+    the chosen folder and exits 0; exits 1 on cancel). This checks the call and the answers.
+  - **Once before release, for real:** run KDE's `kdialog` in a temporary container (podman or
+    docker) that shows its window on the developer's X11 desktop. It takes about 1 GB while it
+    exists and is deleted completely afterwards.
+  - Installing the real `kdialog` on the developer's system is avoided: it pulls in a large part
+    of KDE's libraries.
+- **Not tested, and not needed:** Wayland and terminal-only Linux. Setup stops at the start in
+  both cases, before the folder question.
+- **Windows, in the test bottle `DannyRando-Test`** (checked 2026-11-21, without showing a
+  window):
+  - The bottle runs **PowerShell 7.4 (Core)** in STA mode. Inline C# through `Add-Type` compiles.
+  - The Explorer-style folder window (`IFileOpenDialog` + `FOS_PICKFOLDERS`) can be created and
+    accepts the folder-picking option. .NET's `FolderBrowserDialog` loads too.
+  - So the bottle tests the whole flow: the question, opening the window, picking, cancelling,
+    the subfolder rule and uninstall. It shows Wine's version of the window.
+- **What the bottle can't show:**
+  - real Windows runs setup in **Windows PowerShell 5.1** (.NET Framework), not 7.4. Its
+    `Add-Type` uses the older C# compiler, so the inline C# must stay in older C# (no newer
+    syntax such as `out var`);
+  - the real Explorer look of the window.
+  - So one run on a real Windows 10/11 PC before release is required.
+- **Never against the live install:** test runs use `FT_SETUP_DIR` with a throwaway folder, and
+  `XDG_CONFIG_HOME` / `XDG_DATA_HOME` pointing to throwaway folders. That way no menu entries,
+  login entry or settings of the real install are touched.
+
+### Trying a branch as the live tool (added 2026-11-21)
+
+So the user can test ideas on branches without a release, and without two copies running at once.
+
+- **One copy runs at a time.** "Run branch X" (done with Claude's help, or a script):
+  1. warn that dictation drops out for a few seconds;
+  2. stop the installed FT Assistant;
+  3. start the code from branch X on the user's normal Assistant key;
+  4. confirm the `ready:` line in that build's own log.
+
+  "Back to the installed version" does the reverse.
+- **Each branch runs from its own folder** (a `git worktree`), so a running build never has its
+  files changed underneath it and the main checkout can stay on `next`. These folders hold only
+  source code.
+  - Everything heavy is borrowed from the install, as `run-dev.sh` does today: Python and its
+    packages (including the NVIDIA libraries), the Whisper model, the word list, and the
+    installed Claude Code / OpenCode.
+  - If a branch needs an extra Python package, it goes in a small folder for that branch only.
+    The install's Python is never changed.
+- **Its own settings and log** (copied from the real settings at start), so a test can't change
+  the installed version's settings.
+- **The setup screen shows what's running.** The version line reads, e.g., "Version 0.3.0 test
+  build (conversation-management): not a public release". The `ready:` log line names the branch
+  too.
+  - Only when running from a git checkout; installed copies show the plain version.
+  - Proposed wording: "release candidate" for `next`, "test build" for idea branches (to confirm
+    with the user).
+- **Safety nets:**
+  - A menu entry for "Back to the installed version", because a broken build can't be
+    dictated to.
+  - If the test build crashes, the installed version starts again by itself.
+  - Login always starts the installed version, so a restart of the computer always gets it back.
+- **Replaces** the side-by-side `run-dev.sh` (Scroll Lock key). That can stay for quick checks
+  that don't need the real key.
+
+### Voice commands: a button on the setup screen, and a short list (added 2026-11-21)
+
+**Goal:** move the explanations of the spoken commands off the setup screen, so the screen doesn't
+grow every time a command is added. The commands themselves must stay few and obvious: staying
+simple and easy to use out of the box is one of the project's main goals.
+
+**The button:**
+- A **"Voice commands..."** button on the setup screen, e.g. next to the command word field.
+- It opens a small window listing every command, one line each, with the user's own command word
+  filled in.
+- The setup screen keeps only one line: "Say "<word>, ..." to send a request to your assistant."
+  The longer explanation under the command word field moves into the window.
+- The window opens by voice too, with "<word> help", so it can be found without the setup screen.
+- With "Dictation only", the window shows only the commands that still work ("<word> setup",
+  "<word> help").
+
+**Rules for the list:**
+- **At most about 7 commands, ever.** A new command needs a strong reason, or it replaces one.
+- **Each one is one or two everyday words** after the command word, and said naturally.
+- **It must be useful to most users regularly**, not a power-user feature.
+- **It must be unlikely as the start of a normal request.** "<word>, new topic: ..." is fine;
+  "<word>, continue ..." isn't, because real requests start with "continue".
+- **It must never approve anything.** Permission prompts stay keyboard-only (decision 7 under the
+  "Assistant" keyword), so a misheard word can't authorize an action.
+- **Whisper hint words:** every command is added to the hint list (`textproc`, today
+  "<word>, <word> setup") so the speech engine catches it. Too many hints can make Whisper
+  "hear" them in normal speech, which is one more reason to keep the list short.
+
+**The list** (help, new topic and stop approved by the user, 2026-11-21):
+
+| Say | What happens | Status |
+|---|---|---|
+| "<word>, <request>" | Sends the request to the assistant | exists |
+| "<word>" | Opens the assistant (the current conversation) | exists |
+| "<word> setup" | Opens the setup screen | exists |
+| "<word> help" | Opens the voice commands window | new |
+| "<word> new topic" (optionally followed by a request) | Starts a fresh conversation, then sends the request if there is one | new, conversation-management branch |
+| "<word> stop" | Interrupts the assistant's current work (presses Escape in its window) | new |
+
+**Candidates held back** (not approved; weigh against the 7-command limit before adding any):
+- **"<word> scratch that":** deletes the last dictation that FT Assistant typed (it knows how many
+  characters it typed). Useful for dictating, but risky if the focus has changed since. It would
+  only act when the same window still has focus.
+- **"<word> remember this":** asks the agent to write a topic note now (conversation-management
+  topic notes). It may not be needed if the agent writes notes by itself.
+- **"<word> continue":** forces continuing the old conversation after a quiet gap. It clashes with
+  real requests. It's unnecessary if "new topic" exists and the gap rule is off or long.
+
+**How it fits the conversation-management plan:** "<word> new topic" answers the open question
+about phrases. With it, the user decides when a topic starts, so the quiet-gap rule could be
+optional (off by default) instead of the main mechanism. That's simpler to understand.
+
+**Where it's built:**
+- On `next`: the button, the window, "<word> help" and "<word> stop".
+- On the `conversation-management` branch: "<word> new topic". The window gets that line from
+  there, so the list on `next` shows only the commands that work there.
+
+## On the `conversation-management` branch
+
+Built after the work on `next`, on a branch made from `next`; never merged until the user says so.
+
+### Conversation management (added 2026-11-21)
+
+**The problem:** "Assistant, ..." always continues the one ongoing conversation (decision 6 under
+the "Assistant" keyword). That avoids a pile of one-request conversations, but unrelated topics mix
+in one context. The agent can't tell which earlier parts matter. The conversation keeps growing,
+so answers get slower and use more tokens.
+
+**Considered and set aside: sorting conversations in the background.** The user's first idea was
+this: after about 5 minutes of inactivity, split the running conversation by topic, move each part
+into an existing conversation on that topic (or a new one), and then compress what's left. Not
+recommended:
+
+- **Writing into conversations isn't supported.** Claude Code's JSONL files and OpenCode's
+  database are internal formats that change between versions.
+  - The only safe way to add something to a conversation is to resume it and send a message.
+    That costs a full round of tokens per topic and leaves injected text in it.
+- **The sorting itself costs tokens every idle period**, which can cancel out the savings.
+- **Mistakes would be silent.** A part filed under the wrong topic only shows up later as a
+  strange answer.
+- **It clashes with open windows.** A conversation may still be open, or the agent may still be
+  working.
+- **Compressing is already built in:** Claude Code's `/compact` and auto-compact, and OpenCode's
+  compaction.
+
+**Proposed instead (same goals, sturdier):**
+
+0. **"<word> new topic"** (optionally followed by a request) starts a fresh conversation, then
+   sends the request if there is one. It's one of the voice commands (see "Voice commands" under
+   `next`), but built on this branch.
+
+1. **A new conversation after a quiet gap.**
+   - If the last activity in the ongoing conversation is older than the gap, "Assistant, ..."
+     starts a new conversation instead of continuing it. Suggested default gap: 15 minutes; set
+     on the setup screen (Off / 15 / 30 / 60 minutes).
+   - "Last activity" is the newest write to the conversation: Claude Code's newest `.jsonl` file
+     time; OpenCode's `session.time_updated`.
+     - That includes the agent's own work, so a long-running task doesn't count as quiet.
+     - Read with the code that already finds the last conversation
+       (`harness.last_conversation`).
+   - **Dictating inside an assistant's window always goes to that conversation**, as now. The gap
+     only applies to "Assistant, ..." from elsewhere.
+   - **If the old conversation's window is still open:** open a new window (old one stays), or
+     start the new conversation in that window by sending `/clear` (Claude Code) or `/new`
+     (OpenCode). Open question for the user.
+   - **Overriding by voice:** "<word> new topic" starts fresh at any time (see "Voice
+     commands" under `next`). A phrase to continue anyway after the gap is held back, because
+     "Assistant, continue ..." clashes with requests that really start with "continue".
+   - Small change; fixes the mixing and the growth at no extra cost. Could ship on its own.
+2. **Topic notes with an index, kept by the agent.**
+   - FT Assistant creates, in `~/FT Assistant sessions/`:
+     - an instruction file, `CLAUDE.md` for Claude Code and `AGENTS.md` for OpenCode, with the
+       same text. Both programs load it automatically at the start of every conversation.
+     - a `notes/` folder with `notes/INDEX.md`.
+   - Created only if missing; never overwrites the user's edits (e.g. a version marker in the
+     file).
+   - **The instruction file tells the agent to:**
+     - read `notes/INDEX.md` at the start;
+     - open a note when the request matches an index line;
+     - write or update a short note when it finishes something worth keeping, with one
+       descriptive index line per note ("Windows OpenCode launch: what broke and how it was
+       fixed");
+     - search old conversations only when the user clearly refers to earlier work ("what we did
+       yesterday") and no note covers it.
+   - **Sorting happens when a note is written**, while the agent already understands the topic,
+     so there are no extra background AI calls.
+   - **How a new conversation knows to look:** the index is in its context from the start (a few
+     dozen lines, few tokens). Matching a request against it is ordinary AI judgment. Full notes
+     are read only when something matches.
+   - Same mechanism as Claude Code's own auto memory (a `MEMORY.md` index plus files). A shared
+     notes folder works the same for both harnesses and survives switching between them.
+   - **Where it can miss:**
+     - Indirect connections, if an index line is worded too narrowly.
+     - Work that never got a note.
+     - Remedy: the user says "check your notes" or "look at earlier conversations".
+3. **Optional: a hint from FT Assistant, at no AI cost.**
+   - Before handing over the request, compare its words with the index titles.
+   - On an obvious overlap, append "(possibly related note: <title>)".
+   - A plain word match in memory; nothing is logged or stored.
+
+**Privacy:** topic notes are a new store of what the user asks about (written by the agent in the
+sessions folder, not FT Assistant's log). It must be clearly explained, opt-in on the setup screen
+("Keep topic notes"), and in one folder the user can see, edit and delete. Off by default for new
+users is the safe choice (to confirm with the user). The gap rule (1) stores nothing new.
+
+**Testing:**
+- Only with a throwaway sessions folder, never the user's real `~/FT Assistant sessions` or its
+  conversations (`config.sessions_dir()` needs an override for this, like
+  `FT_ASSISTANT_CONFIG_DIR`).
+- Tested on Linux with both harnesses, then in the Windows test bottle.
+
+**Open questions for the user:**
+- Default gap length.
+- New window vs `/clear` / `/new` in the open one.
+- Whether the gap rule is needed at all once "<word> new topic" exists (or off by default).
+- Topic notes on or off by default.
+- Whether to ship the gap rule first on its own.
+
 ## Open questions
 
 - How setup installs the harness CLIs: the npm packages measured above need Node.js; the official
