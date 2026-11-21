@@ -30,7 +30,9 @@ AI coding assistant.
   on the processor. If the card can't be used (for example its driver is too old), FT Assistant
   switches to the processor by itself and tells you.
 - **Small setup file** that downloads only what's missing, and reuses what's already on your
-  computer (Python, NVIDIA libraries, an existing Whisper model) to save downloads and disk space.
+  computer (NVIDIA libraries, an existing Whisper model) to save downloads and disk space.
+- **Its own Python**, kept in its install folder: FT Assistant never uses or changes any Python
+  already on your computer, and running setup again reuses it instead of downloading it again.
 - **Setup screen** (hold your key and say "Assistant setup") to pick the assistant, change the key,
   check for updates or uninstall. If the assistant isn't installed yet, its Install button gets
   the latest version from the official source, and the screen notices when it's done.
@@ -48,16 +50,18 @@ AI coding assistant.
 
 ## Install
 
-Download `FT-Assistant-setup.cmd` from the
+Download **FT Assistant Installer** (`FT-Assistant-Installer.cmd`) from the
 [latest release](https://github.com/freethought78/ft-assistant/releases/latest), then:
 
 - **Windows:** double-click it.
-- **Linux:** run `bash FT-Assistant-setup.cmd` in a terminal.
+- **Linux:** run `bash FT-Assistant-Installer.cmd` in a terminal.
 
-Setup checks your computer, shows exactly what it will download and how big it is, and waits for
-you before downloading anything. On Linux it can install the few system packages it needs
-(`xdotool`, `libnotify`, `portaudio`, and `python3-tk` for clear text) after asking for your
-password.
+The installer first asks where to install: press Enter for the usual place in your user folder, or C to
+pick another folder in a folder window. If that folder already has other files in it, FT Assistant
+goes into an "FT Assistant" folder of its own there. Setup then shows exactly what it will
+download and how big it is, and waits for you before downloading anything. On Linux it can
+install the few system packages it needs (`xdotool`, `libnotify`, `portaudio`) after asking for
+your password.
 
 **Updating or repairing:** the app checks for a new version about once a day and asks you before
 updating (or click "Check for updates" on the setup screen). You can also run the newest setup
@@ -73,10 +77,15 @@ and keeps your settings, the speech model and anything already downloaded.
 |---|---|
 | Anything | It's typed into the window you're using. |
 | "Assistant, *request*" | The request goes to your assistant: into its window if you're already in it, otherwise it opens (continuing your last conversation). |
+| "Assistant" | Your assistant's window opens, with your current conversation. |
+| "Assistant stop" | Your assistant stops what it's doing right now (like pressing Esc in its window). |
 | "Assistant setup" | The setup screen opens. |
+| "Assistant help" | A list of these voice commands opens (also on the setup screen: "Voice commands..."). |
 
 - **Beeps:** a high beep means the microphone is listening. A lower beep when you let go means it
   heard the release.
+- **It shows as "FT Assistant"** in Task Manager or System Monitor (not as "python"), so it's
+  easy to find and close if you ever need to.
 - **Short taps and silence are ignored**, and so are the stock phrases Whisper sometimes makes up
   on silence (such as "Thank you.").
 - **Your own words:** to get names or unusual words spelled your way, add them to `vocabulary.txt`,

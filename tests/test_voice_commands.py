@@ -1,0 +1,99 @@
+import unittest
+from unittest import mock
+
+from ft_assistant import textproc, voice_commands
+
+try:
+    from ft_assistant import app          # needs numpy (FT Assistant's own Python has it)
+except ImportError:
+    app = None
+
+
+class CommandList(unittest.TestCase):
+    def test_lists_every_command_with_the_users_word(self):
+        said = [say for say, _ in voice_commands.command_list("Jarvis")]
+        self.assertEqual(said, ["Jarvis, ...", "Jarvis", "Jarvis stop", "Jarvis setup",
+                                "Jarvis help"])
+
+    def test_dictation_only_shows_only_what_works(self):
+        said = [say for say, _ in voice_commands.command_list("Assistant", dictation_only=True)]
+        self.assertEqual(said, ["Assistant setup", "Assistant help"])
+        self.assertIn("choose one on the setup screen",
+                      " ".join(voice_commands.notes("Assistant", dictation_only=True)))
+
+    def test_stays_short(self):
+        # FT Assistant should stay simple: at most about 7 voice commands, ever.
+        self.assertLessEqual(len(voice_commands.COMMANDS), 7)
+
+    def test_every_listed_command_is_understood(self):
+        for say, _ in voice_commands.command_list("Assistant"):
+            if say.endswith("..."):
+                continue
+            kind = textproc.parse_command(say).kind
+            self.assertIn(kind, ("assistant", "setup", "help", "stop"), say)
+            self.assertIn(say, textproc.keyword_hints("Assistant"))    # a Whisper hint too
+
+
+@unittest.skipIf(app is None, "numpy isn't installed")
+class Stop(unittest.TestCase):
+    def make_app(self):
+        a = app.App.__new__(app.App)          # no engine, no key listener
+        a.our_windows, a.agent_window, a.commands_proc = set(), {}, None
+        a.settings = mock.Mock(harness="opencode")
+        return a
+
+    def test_stop_in_the_assistant_window_presses_escape_there(self):
+        a = self.make_app()
+        with mock.patch.object(app, "plat") as plat, \
+                mock.patch.object(app.harness, "harness_from_title", return_value="opencode"):
+            plat.is_terminal_class.return_value = True
+            a.stop_assistant((42, "gnome-terminal", "OC | session"))
+        self.assertEqual(plat.press_escape.call_count, 2)       # OpenCode: "esc again to interrupt"
+        plat.activate_window.assert_not_called()
+
+    def test_claude_code_gets_one_escape(self):
+        a = self.make_app()
+        a.settings = mock.Mock(harness="claude")
+        a.agent_window["claude"] = 9
+        with mock.patch.object(app, "plat") as plat, \
+                mock.patch.object(app.config, "load", return_value=a.settings):
+            plat.is_terminal_class.return_value = False
+            plat.terminal_windows.return_value = {9}
+            plat.activate_window.return_value = True
+            a.stop_assistant((1, "firefox", "Docs"))
+        plat.press_escape.assert_called_once()                   # a second would open "rewind"
+
+    def test_stop_elsewhere_brings_the_assistant_forward_first(self):
+        a = self.make_app()
+        a.agent_window["opencode"] = 7
+        with mock.patch.object(app, "plat") as plat, \
+                mock.patch.object(app.config, "load", return_value=a.settings):
+            plat.is_terminal_class.return_value = False
+            plat.terminal_windows.return_value = {7}
+            plat.activate_window.return_value = True
+            a.stop_assistant((1, "firefox", "Docs"))
+        plat.activate_window.assert_called_once_with(7)
+        self.assertEqual(plat.press_escape.call_count, 2)
+
+    def test_stop_with_no_assistant_window_just_says_so(self):
+        a = self.make_app()
+        with mock.patch.object(app, "plat") as plat, \
+                mock.patch.object(app.config, "load", return_value=a.settings):
+            plat.is_terminal_class.return_value = False
+            plat.terminal_windows.return_value = set()
+            a.stop_assistant((1, "firefox", "Docs"))
+        plat.press_escape.assert_not_called()
+        plat.notify.assert_called_once()
+
+    def test_help_opens_one_window(self):
+        a = self.make_app()
+        with mock.patch.object(app.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None          # still open
+            a.open_commands()
+            a.open_commands()
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args[0][0][1:], ["-m", "ft_assistant.voice_commands"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -16,7 +16,7 @@ everyone else gets:
 
 | Path | What |
 |---|---|
-| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (venv from the system Python 3.12), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-settings` (called `ft-assistant-setup` before 0.2.5), `ft-assistant-uninstall`, `install.py`, `install.json`. |
+| `~/.local/share/ft-assistant/` | The install: `app/ft_assistant/` (program), `python/` (a venv from the system Python 3.12 until the user installs 0.3.0, whose update moves it to FT Assistant's own pinned Python; old one kept as `python.old` until the app has started), `models/large-v3-turbo/`, launchers `ft-assistant`, `ft-assistant-settings` (called `ft-assistant-setup` before 0.2.5), `ft-assistant-uninstall`, `install.py`, `install.json`. |
 | `~/.config/ft-assistant/` | `settings.json` (harness `claude`, Assistant key **mouse button 12**), `vocabulary.txt`, `ft-assistant.log` (**errors only** plus a start-up line since 0.2.0; never what the user says), `update-state.json`, `.lock` (holds the process id). |
 | `~/.config/autostart/ft-assistant.desktop` | Starts it at login. |
 
@@ -32,15 +32,29 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   (now 0.3.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
-  `gh release create vX.Y.Z dist/FT-Assistant-setup.cmd` (as freethought78). The app notices
+  `gh release create vX.Y.Z dist/FT-Assistant-Installer.cmd dist/FT-Assistant-setup.cmd` (as
+  freethought78; the second is the same file under its pre-0.3.0 name, for a release or two). The app notices
   within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on
   the user's own install worked (2026-11-18).
+- **FT Assistant's own Python is pinned** in `installer/install.py` (`RUNTIME_*`). The Linux
+  setup window's smooth-text Tk is built by hand with `bash installer/build-smooth-tk.sh` (no
+  GitHub automation, the user's decision) and kept on GitHub as the **pre-release**
+  `smooth-tk-<version>` (pre-release, so the update check never sees it). Changing the runtime
+  means rebuilding and re-uploading it; the script's header lists the steps.
 - Only with the user's go-ahead: commits, pushes, releases, and anything that restarts the tool.
 - **Tests:** `python3 -m unittest discover -s tests -t .`
 - **Try a dev build next to the live tool:** `./run-dev.sh` (borrows the install's Python, model
   and word list; own settings/log in
   `~/.config/ft-assistant-dev/`, Assistant key Scroll Lock there; **never button 12**, which the
   live tool uses). Tell the user before starting it, and stop it after testing.
+- **Run a branch in place of the live tool:** `./run-branch.sh <branch>` (its latest commit, from
+  a snapshot in `.worktrees/`) or `./run-branch.sh .` (this folder with uncommitted changes); back
+  with `./run-branch.sh --back` or the menu entry "FT Assistant: back to the installed version";
+  `--status` says which is running. It stops the installed copy and runs on button 12, so it
+  **restarts the tool: only with the user's go-ahead**, and confirm the `ready:` line it prints.
+  Own settings (fresh copy of the live ones)/log in `~/.config/ft-assistant-branch/`. If the test
+  build stops by itself, the installed copy restarts automatically; login always starts the
+  installed copy.
 - **Windows testing** uses only the existing Bottles bottle **`DannyRando-Test`** (Flatpak Bottles).
   **One Wine session at a time:** every `bottles-cli run` starts its own sandbox with its own
   wineserver, so two runs at once (e.g. Notepad in one, the app in another) fight over the same
@@ -76,6 +90,10 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   `~/.config/ft-assistant/ft-assistant.log`). Restart:
   `pkill -f 'ft-assistant/python/bin/python3 -m [f]t_assistant'; sleep 1; setsid ~/.local/share/ft-assistant/ft-assistant >/dev/null 2>&1 < /dev/null &`
   (the `[f]` stops `pkill` from matching, and killing, the shell running the command itself).
+  From 0.3.0 the processes are also named (`FT Assistant`, `FT Asst speech`, `FT Asst setup`,
+  `FT Asst help`; Windows: `FT Assistant*.exe`), so `pgrep -x 'FT Assistant'` finds the program.
+  A test build from `run-branch.sh` has the same names: tell them apart by their
+  `FT_ASSISTANT_CONFIG_DIR` (as `run-branch.sh` does).
 - Test changes before deploying them over the working version, and keep a way to roll back.
 - **Never log what the user says, and no activity either.** On 2026-11-17 transcript logging was
   turned off; on 2026-11-18 the user chose an **errors-only log** (plus one start-up line) and had

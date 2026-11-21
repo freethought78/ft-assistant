@@ -4,3 +4,4 @@ models/
 .lock
 __pycache__/
 dist/
+.worktrees/

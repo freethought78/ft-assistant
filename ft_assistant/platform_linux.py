@@ -197,6 +197,10 @@ def press_enter():
     subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"])
 
 
+def press_escape():
+    subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"])
+
+
 def activate_window(wid):
     """Bring a window to the front and give it the keyboard. True if it worked."""
     try:

@@ -21,6 +21,10 @@ import os
 import struct
 import sys
 
+import procname          # this script's own folder is on the search path
+
+procname.set_name("speech")
+
 # Keep the real stdout for the protocol; anything libraries print goes to stderr (the log).
 proto_out = os.fdopen(os.dup(1), "wb")
 os.dup2(2, 1)

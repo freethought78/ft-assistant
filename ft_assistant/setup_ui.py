@@ -13,8 +13,9 @@ import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from . import __version__, config, harness, keys, textproc, updater
-from . import plat
+from . import (__version__, buildinfo, config, harness, keys, look, textproc, updater,
+               voice_commands)
+from . import plat, procname
 
 CHANGED = 10
 CAPTURE_SECONDS = 15
@@ -41,9 +42,10 @@ DISABLED = "#6c6f75"
 ACCENT = "#5b9cf5"
 
 
-# Font sizes in pixels (negative = pixels), so the text is the same size whether Tk draws with
-# the desktop's smooth fonts or, as in the installer's own Python, with the older X11 fonts.
-BASE_PX, HEAD_PX, TITLE_PX = -15, -17, -22
+# Text sizes come from the desktop's own settings (see look.py) and are given to Tk in pixels.
+# Spacing is measured in multiples of the body text size ("em"), so it grows and shrinks with it.
+WRAP_EM, MIN_WRAP_EM, MAX_WRAP_EM = 35, 24, 60    # how wide text lines are
+PAD_EM = 1.2                                      # the window's inner margin
 FONT_CHOICES = ("Noto Sans", "Ubuntu", "Cantarell", "DejaVu Sans", "Liberation Sans",
                 "Segoe UI", "nimbus sans l", "helvetica")
 
@@ -56,20 +58,52 @@ def pick_font_family(root):
     return "TkDefaultFont"
 
 
-def apply_fonts(root):
-    family = pick_font_family(root)
+def desktop_look(root):
+    """(font family, body text size in pixels, pixels per point) as the desktop shows text."""
+    if IS_WINDOWS:
+        # Tk starts with Windows' interface font; the process is DPI-aware (see main()).
+        px_per_pt = root.winfo_fpixels("1i") / 72
+        f = tkfont.nametofont("TkDefaultFont", root).actual()
+        size = f.get("size") or 0
+        pt = size if size > 0 else (-size / px_per_pt if size else None)
+        family, factor = f.get("family"), 1.0
+    else:
+        px_per_pt = (look.xft_dpi() or 96) / 72
+        # Tk otherwise converts sizes with the monitor's physical DPI, which is often far from
+        # the desktop's (a wide monitor can report 54 DPI): its smooth-font drawing then makes
+        # text up to twice as big as asked. Use the DPI the desktop uses for text.
+        root.tk.call("tk", "scaling", px_per_pt)
+        family, pt, factor = look.linux_desktop_font()
+    available = {name.lower(): name for name in tkfont.families(root)}
+    family = available.get((family or "").lower()) or pick_font_family(root)
+    return family, round(look.text_points(pt, factor) * px_per_pt), px_per_pt
+
+
+def set_text_size(root, family, base_px):
+    """Use this font and body size (pixels) everywhere: Tk's own fonts (also used by its Yes/No
+    dialogs) and the setup window's heading and title fonts."""
+    body, head, title = look.sizes(base_px)
     for named in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont",
                   "TkTooltipFont", "TkIconFont", "TkSmallCaptionFont"):
         try:
-            tkfont.nametofont(named, root).configure(family=family, size=BASE_PX)
+            tkfont.nametofont(named, root).configure(family=family, size=body)
         except tk.TclError:
             pass
-    return family
+    # Our named fonts are kept on the window: Tk deletes a named font when its Python object goes
+    # away, and the styles using it would silently fall back to a small default.
+    own = root.__dict__.setdefault("_ft_fonts", {})
+    for name, size in (("FTHeadFont", head), ("FTTitleFont", title)):
+        if name in own:
+            own[name].configure(family=family, size=size, weight="bold")
+        else:
+            own[name] = tkfont.Font(root, name=name, family=family, size=size, weight="bold")
+    pad = round(-body * 0.8), round(-body * 0.33)
+    ttk.Style(root).configure("TButton", padding=pad)
 
 
-def apply_dark_theme(root):
+def apply_dark_theme(root, family, base_px):
     """Dark look for the window and for the Tk dialogs it opens (Yes/No questions)."""
-    family = apply_fonts(root)
+    set_text_size(root, family, base_px)
     root.configure(bg=BG)
     for pattern, value in (("*Background", BG), ("*Foreground", FG),
                            ("*activeBackground", BUTTON_ACTIVE), ("*activeForeground", FG),
@@ -83,15 +117,15 @@ def apply_dark_theme(root):
         style.theme_use("clam")
     style.configure(".", background=BG, foreground=FG, fieldbackground=BUTTON,
                     bordercolor=BORDER, lightcolor=BG, darkcolor=BG, focuscolor=ACCENT,
-                    troughcolor=BUTTON, font=(family, BASE_PX))
+                    troughcolor=BUTTON, font="TkDefaultFont")
     style.configure("TFrame", background=BG)
     style.configure("TLabel", background=BG, foreground=FG)
-    style.configure("Title.TLabel", font=(family, TITLE_PX, "bold"))
-    style.configure("Head.TLabel", font=(family, HEAD_PX, "bold"))
+    style.configure("Title.TLabel", font="FTTitleFont")
+    style.configure("Head.TLabel", font="FTHeadFont")
     style.configure("Note.TLabel", foreground=MUTED)
     style.configure("Warn.TLabel", foreground=WARN)
     style.configure("TButton", background=BUTTON, foreground=FG, bordercolor=BORDER,
-                    lightcolor=BUTTON, darkcolor=BUTTON, padding=(12, 5))
+                    lightcolor=BUTTON, darkcolor=BUTTON)
     style.map("TButton",
               background=[("disabled", BG), ("pressed", BUTTON_ACTIVE), ("active", BUTTON_ACTIVE)],
               foreground=[("disabled", DISABLED)],
@@ -113,15 +147,16 @@ DECOR_W, DECOR_H = 16, 48
 MIN_W, MIN_H = 560, 240
 
 
-def fit_window(need_w, need_h, area):
+def fit_window(need_w, need_h, area, decor=(DECOR_W, DECOR_H), min_size=(MIN_W, MIN_H)):
     """(width, height, x, y) for the window: its natural size, shrunk to fit `area` (the usable
     part of the monitor: without taskbar or panels) and centered in it. The content scrolls
     when it doesn't fit, and Save/Cancel stay visible at the bottom."""
     ax, ay, aw, ah = area
-    w = max(min(need_w, aw - DECOR_W), min(MIN_W, aw - DECOR_W))
-    h = max(min(need_h, ah - DECOR_H), min(MIN_H, ah - DECOR_H))
-    x = ax + max(0, (aw - w - DECOR_W) // 2)
-    y = ay + max(0, (ah - h - DECOR_H) // 2)
+    dw, dh = decor
+    w = max(min(need_w, aw - dw), min(min_size[0], aw - dw))
+    h = max(min(need_h, ah - dh), min(min_size[1], ah - dh))
+    x = ax + max(0, (aw - w - dw) // 2)
+    y = ay + max(0, (ah - h - dh) // 2)
     return w, h, x, y
 
 
@@ -143,7 +178,12 @@ class SetupWindow:
 
         root.withdraw()                 # shown once it's sized to fit the screen
         root.title("FT Assistant setup")
-        apply_dark_theme(root)
+        self.family, self.base_px, px_per_pt = desktop_look(root)
+        self.floor_px = look.shrink_floor(self.base_px, px_per_pt)
+        self.dpi_unit = px_per_pt * 72 / 96       # 1.0 at 100 % display scaling
+        self.wrapping = []                        # labels whose lines wrap to the window width
+        self.wrap = round(WRAP_EM * self.base_px)
+        apply_dark_theme(root, self.family, self.base_px)
 
         # The settings scroll when the window can't be tall enough for them (small screens,
         # large display scaling); Save/Cancel sit below, outside the scrolling part.
@@ -154,11 +194,11 @@ class SetupWindow:
         self.scrollbar.grid(row=0, column=1, sticky="ns")
         root.rowconfigure(0, weight=1)
         root.columnconfigure(0, weight=1)
-        f = self.content = ttk.Frame(self.canvas, padding=(18, 18, 18, 4))
+        self.pad = round(PAD_EM * self.base_px)
+        f = self.content = ttk.Frame(self.canvas, padding=(self.pad, self.pad, self.pad, 4))
         self._content_id = self.canvas.create_window(0, 0, window=f, anchor="nw")
         f.bind("<Configure>", lambda e: self._content_changed())
-        self.canvas.bind("<Configure>", lambda e: (
-            self.canvas.itemconfigure(self._content_id, width=e.width), self._update_scrollbar()))
+        self.canvas.bind("<Configure>", self._canvas_resized)
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             root.bind_all(seq, self._wheel, add="+")
         self.fitted_need = None
@@ -166,7 +206,7 @@ class SetupWindow:
         r = 0
         ttk.Label(f, text="FT Assistant setup", style="Title.TLabel").grid(row=r, sticky="w")
         r += 1
-        self.hint = ttk.Label(f, wraplength=520)
+        self.hint = self._wrapping(ttk.Label(f))
         self.hint.grid(row=r, sticky="w", pady=(4, 12))
         r += 1
 
@@ -196,8 +236,8 @@ class SetupWindow:
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
-        self.privacy = ttk.Label(f, text=PRIVACY_NOTE.format(word=settings.keyword), wraplength=520,
-                                 style="Note.TLabel")
+        self.privacy = self._wrapping(ttk.Label(f, text=PRIVACY_NOTE.format(word=settings.keyword),
+                                                style="Note.TLabel"))
         self.privacy.grid(row=r, sticky="w", pady=(4, 14))
         r += 1
 
@@ -212,14 +252,14 @@ class SetupWindow:
         self.change_btn = ttk.Button(krow, text="Change key", command=self._start_capture)
         self.change_btn.grid(row=0, column=1)
         r += 1
-        self.capture_msg = ttk.Label(f, wraplength=520, style="Warn.TLabel")
+        self.capture_msg = self._wrapping(ttk.Label(f, style="Warn.TLabel"))
         self.capture_msg.grid(row=r, sticky="w", pady=(2, 2))
         r += 1
-        ttk.Label(f, text="Good choices: " + keys.GOOD_CHOICES, wraplength=520,
-                  style="Note.TLabel").grid(row=r, sticky="w", pady=(2, 2))
+        self._wrapping(ttk.Label(f, text="Good choices: " + keys.GOOD_CHOICES,
+                                 style="Note.TLabel")).grid(row=r, sticky="w", pady=(2, 2))
         r += 1
-        ttk.Label(f, text="Best avoided: " + keys.BEST_AVOIDED, wraplength=520,
-                  style="Note.TLabel").grid(row=r, sticky="w", pady=(2, 14))
+        self._wrapping(ttk.Label(f, text="Best avoided: " + keys.BEST_AVOIDED,
+                                 style="Note.TLabel")).grid(row=r, sticky="w", pady=(2, 14))
         r += 1
 
         # ---- command word
@@ -231,9 +271,12 @@ class SetupWindow:
         tk.Entry(wrow, textvariable=self.word_var, width=22, bg=BUTTON, fg=FG,
                  insertbackground=FG, relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=ACCENT,
-                 font=(pick_font_family(root), BASE_PX)).grid(row=0, column=0, sticky="w", ipady=3)
+                 font="TkTextFont").grid(row=0, column=0, sticky="w", ipady=3)
+        ttk.Button(wrow, text="Voice commands...", command=self._show_commands).grid(
+            row=0, column=1, sticky="w", padx=(round(0.8 * self.base_px), 0))
+        self.commands_win = None
         r += 1
-        self.word_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
+        self.word_msg = self._wrapping(ttk.Label(f, style="Note.TLabel"))
         self.word_msg.grid(row=r, sticky="w", pady=(4, 14))
         r += 1
         self.word_var.trace_add("write", lambda *a: self._refresh())
@@ -248,9 +291,15 @@ class SetupWindow:
         self.uninstall_btn = ttk.Button(urow, text="Uninstall...", command=self._uninstall,
                                         state="normal" if installed_dir() else "disabled")
         self.uninstall_btn.grid(row=0, column=1, padx=8)
-        ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
+        if buildinfo.is_test_build():
+            # A test build from a branch: on its own line, so it stands out and fits.
+            r += 1
+            self._wrapping(ttk.Label(f, text=f"Version {buildinfo.describe()}",
+                                     style="Warn.TLabel")).grid(row=r, sticky="w", pady=(4, 0))
+        else:
+            ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
         r += 1
-        self.update_msg = ttk.Label(f, wraplength=520, style="Note.TLabel")
+        self.update_msg = self._wrapping(ttk.Label(f, style="Note.TLabel"))
         self.update_msg.grid(row=r, sticky="w", pady=(4, 2))
         r += 1
         self.update_row = ttk.Frame(f)
@@ -265,7 +314,7 @@ class SetupWindow:
         r += 1
 
         # ---- save / cancel (always visible)
-        bar = self.bar = ttk.Frame(root, padding=(18, 10, 18, 14))
+        bar = self.bar = ttk.Frame(root, padding=(self.pad, 10, self.pad, 14))
         bar.grid(row=1, column=0, columnspan=2, sticky="we")
         bar.columnconfigure(0, weight=1)
         brow = ttk.Frame(bar)
@@ -284,7 +333,69 @@ class SetupWindow:
         self._fit()
         root.deiconify()
 
+    def _show_commands(self):
+        """The voice commands window, with the command word and key as currently set here."""
+        if self.commands_win is not None and self.commands_win.winfo_exists():
+            self.commands_win.lift()
+            return
+        word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
+        self.commands_win = voice_commands.open_from_setup(
+            self.root, word, keys.display_name(self.trigger),
+            self.harness_var.get() == config.DICTATION_ONLY, self.base_px)
+
     # ---- size and scrolling
+
+    def _wrapping(self, label):
+        """A label whose lines wrap to the window's width (re-wrapped when it's resized)."""
+        label.configure(wraplength=self.wrap)
+        self.wrapping.append(label)
+        return label
+
+    def _set_wrap(self, wrap):
+        lo, hi = round(MIN_WRAP_EM * self.base_px), round(MAX_WRAP_EM * self.base_px)
+        wrap = max(lo, min(hi, wrap))
+        if abs(wrap - self.wrap) > 2:
+            self.wrap = wrap
+            for label in self.wrapping:
+                label.configure(wraplength=wrap)
+
+    def _canvas_resized(self, event):
+        """The window was resized (by the user, or to fit the screen): text re-wraps to use the
+        new width, and the scrollbar appears or goes as needed."""
+        self.canvas.itemconfigure(self._content_id, width=event.width)
+        if self.fitted_need is not None:      # not before the window has its real size
+            self._set_wrap(event.width - 2 * self.pad)
+        self._update_scrollbar()
+
+    def _decor(self):
+        """Room for the title bar and borders the desktop adds (they grow with display scaling)."""
+        return round(DECOR_W * self.dpi_unit), round(DECOR_H * self.dpi_unit)
+
+    def _min_size(self):
+        return (round(MIN_WRAP_EM * self.base_px) + 2 * self.pad + self.scrollbar.winfo_reqwidth(),
+                round(MIN_H * self.dpi_unit))
+
+    def _shrink_to_fit(self, area):
+        """Before the window is shown, if it's taller than the screen allows: first make it wider
+        (longer lines need fewer of them), then make the text a little smaller (down to
+        look.FIT_SHRINK of its size, never below 9 points). Whatever still doesn't fit scrolls."""
+        dw, dh = self._decor()
+
+        def widen():
+            room_w = area[2] - dw - 2 * self.pad - self.scrollbar.winfo_reqwidth()
+            self._set_wrap(min(room_w, round(MAX_WRAP_EM * self.base_px)))
+            self.root.update_idletasks()
+
+        if self._needed_size()[1] <= area[3] - dh:
+            return
+        widen()
+        while self._needed_size()[1] > area[3] - dh and self.base_px - 1 >= self.floor_px:
+            self.base_px -= 1
+            set_text_size(self.root, self.family, self.base_px)
+            self.pad = round(PAD_EM * self.base_px)
+            self.content.configure(padding=(self.pad, self.pad, self.pad, 4))
+            self.bar.configure(padding=(self.pad, 10, self.pad, 14))
+            widen()
 
     def _needed_size(self):
         return (self.content.winfo_reqwidth() + self.scrollbar.winfo_reqwidth(),
@@ -303,11 +414,14 @@ class SetupWindow:
         return area
 
     def _fit(self):
-        need_w, need_h = self._needed_size()
         area = self._work_area()
-        w, h, x, y = fit_window(need_w, need_h, area)
-        self.root.minsize(min(MIN_W, w), min(MIN_H, h))
-        self.root.maxsize(area[2] - DECOR_W, area[3] - DECOR_H)
+        if self.fitted_need is None:
+            self._shrink_to_fit(area)
+        need_w, need_h = self._needed_size()
+        decor, min_size = self._decor(), self._min_size()
+        w, h, x, y = fit_window(need_w, need_h, area, decor, min_size)
+        self.root.minsize(min(min_size[0], w), min(min_size[1], h))
+        self.root.maxsize(area[2] - decor[0], area[3] - decor[1])
         self.root.geometry(f"{w}x{h}+{x}+{y}")
         self.fitted_need = need_h
 
@@ -358,8 +472,9 @@ class SetupWindow:
                                     style="Warn.TLabel")
         else:
             self.word_msg.configure(
-                text=f"Start a dictation with \"{word}\" to send it to your assistant, or say "
-                     f"\"{word} setup\" to open this screen. After saving, try it a few times: "
+                text=f"Say \"{word}, ...\" and a request to send it to your assistant. "
+                     "\"Voice commands...\" lists everything you can say. After saving, try it "
+                     "a few times: "
                      "some words are easier for the speech engine to catch than others.",
                 style="Note.TLabel")
         self.key_label.configure(text=f"Current Assistant key: {name}")
@@ -584,8 +699,26 @@ class SetupWindow:
         sys.exit(0)
 
 
+def dpi_aware():
+    """Windows: draw at the screen's real resolution, so text stays sharp with display scaling
+    (otherwise Windows stretches the whole window, blurring it). Tk then sizes text in points
+    by the real DPI."""
+    if not IS_WINDOWS:
+        return
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)      # system DPI aware (Windows 8.1+)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()       # Windows Vista+
+        except Exception:
+            pass
+
+
 def main():
+    procname.set_name("setup")
     settings = config.load()
+    dpi_aware()
     root = tk.Tk()
     SetupWindow(root, settings, first_run=not settings.harness_chosen)
     root.mainloop()

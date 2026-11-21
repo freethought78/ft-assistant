@@ -316,6 +316,10 @@ def press_enter():
     _send([(0x0D, 0, 0), (0x0D, 0, KEYEVENTF_KEYUP)])
 
 
+def press_escape():
+    _send([(0x1B, 0, 0), (0x1B, 0, KEYEVENTF_KEYUP)])
+
+
 def caps_lock_off():
     if user32.GetKeyState(0x14) & 1:
         _send([(0x14, 0, 0), (0x14, 0, KEYEVENTF_KEYUP)])   # injected: our hook ignores it

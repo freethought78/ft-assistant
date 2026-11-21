@@ -12,6 +12,8 @@ import time
 
 import numpy as np
 
+from . import procname
+
 log = logging.getLogger("ft_assistant")
 WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "whisper_worker.py")
 
@@ -50,7 +52,7 @@ class Engine:
             extra = {"creationflags": 0x08000000} if sys.platform == "win32" else {}  # no console
             if self.processor_only:
                 extra["env"] = dict(os.environ, FT_ASSISTANT_DEVICE="cpu")
-            self.proc = subprocess.Popen([sys.executable, WORKER], stdin=subprocess.PIPE,
+            self.proc = subprocess.Popen([procname.executable("speech"), WORKER], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=logf, **extra)
             logf.close()
             words = self.proc.stdout.readline().split()
