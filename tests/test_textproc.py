@@ -55,6 +55,19 @@ class ParseCommand(unittest.TestCase):
                          Command("assistant", "setup a new repo"))
 
 
+    def test_help_and_stop(self):
+        for s in ("Assistant help", "Assistant, help.", "assistant Help!"):
+            self.assertEqual(parse_command(s), Command("help"), s)
+        for s in ("Assistant stop", "Assistant, stop.", "Assistant STOP!"):
+            self.assertEqual(parse_command(s), Command("stop"), s)
+        self.assertEqual(parse_command("Jarvis stop", "Jarvis"), Command("stop"))
+        # More words make it a request, which goes to the assistant as usual.
+        self.assertEqual(parse_command("Assistant, stop the server."),
+                         Command("assistant", "stop the server."))
+        self.assertEqual(parse_command("Assistant, help me write a test."),
+                         Command("assistant", "help me write a test."))
+
+
 class DictationOnly(unittest.TestCase):
     def test_keyword_is_plain_text_in_dictation_only(self):
         self.assertEqual(route("Assistant, open the browser.", dictation_only=True),
@@ -63,6 +76,10 @@ class DictationOnly(unittest.TestCase):
 
     def test_setup_still_works_in_dictation_only(self):
         self.assertEqual(route("Assistant setup.", dictation_only=True), Command("setup"))
+        self.assertEqual(route("Assistant help.", dictation_only=True), Command("help"))
+        # No assistant to stop: typed like any other text.
+        self.assertEqual(route("Assistant stop.", dictation_only=True),
+                         Command("dictate", "Assistant stop."))
 
     def test_assistant_mode_unchanged(self):
         self.assertEqual(route("Assistant, open the browser.", dictation_only=False),
@@ -96,10 +113,12 @@ class CommandWord(unittest.TestCase):
 
 class Hotwords(unittest.TestCase):
     def test_keyword_hints_always_first(self):
-        self.assertEqual(build_hotwords([]), "Assistant, Assistant setup")
+        hints = "Assistant, Assistant setup, Assistant help, Assistant stop"
+        self.assertEqual(build_hotwords([]), hints)
         self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
-                         "Assistant, Assistant setup, Discord, Claude")
-        self.assertEqual(build_hotwords(["Claude"], "Jarvis"), "Jarvis, Jarvis setup, Claude")
+                         hints + ", Discord, Claude")
+        self.assertEqual(build_hotwords(["Claude"], "Jarvis"),
+                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Claude")
 
 
 if __name__ == "__main__":

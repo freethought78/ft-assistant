@@ -726,7 +726,29 @@ The plan as agreed:
 - **Replaces** the side-by-side `run-dev.sh` (Scroll Lock key). That can stay for quick checks
   that don't need the real key.
 
-### Voice commands: a button on the setup screen, and a short list (added 2026-11-21)
+### Voice commands: a button on the setup screen, and a short list (added and built 2026-11-21)
+
+**Built** (`ft_assistant/voice_commands.py`, `textproc.py`, `app.py`, `setup_ui.py`):
+- **The list:** "<word>, ...", "<word>", "<word> stop", "<word> setup", "<word> help".
+  - Shown by the "Voice commands..." button (next to the command word field), and by "<word>
+    help" as its own process, in front.
+  - In Dictation only it shows just setup and help, and "<word> stop" is typed as text.
+  - The setup screen's explanation under the field is now one line pointing to the button.
+- **Matching:** the whole rest of the dictation must be the command ("Assistant, stop the
+  server" is a request). "help" and "stop" are Whisper hint words like "setup".
+- **"<word> stop":**
+  - It presses Escape in the assistant window being dictated to, or else brings forward the
+    window FT Assistant opened and presses it there. With no such window, it shows a notice.
+  - **OpenCode needs two presses:** one only shows "esc again to interrupt", which resets after a
+    few seconds; two showed "interrupted" (tested in a throwaway folder 2026-11-21).
+  - **Claude Code gets one:** a second Escape would open its "rewind" menu.
+- **Tested:**
+  - Unit tests: routing, the list (at most 7, each understood and hinted), stop per assistant,
+    one help window at a time.
+  - **The user, live, with the test build (2026-11-21):** "help", "stop" (Claude Code), and the
+    setup button all worked.
+
+The plan as agreed:
 
 **Goal:** move the explanations of the spoken commands off the setup screen, so the screen doesn't
 grow every time a command is added. The commands themselves must stay few and obvious: staying

@@ -66,6 +66,7 @@ class App:
         self.our_windows = set()        # terminal windows this tool opened for an agent
         self.agent_window = {}          # harness key -> its most recent window we opened
         self.setup_proc = None          # the setup screen, while it's open
+        self.commands_proc = None       # the voice commands window ("<word> help")
         self.listener = None            # the current Assistant key listener
         self.caps_trigger = (settings.trigger.get("type") == "key"
                              and settings.trigger.get("keysym") == "Caps_Lock")
@@ -131,6 +132,10 @@ class App:
                 plat.type_text(cmd.text + " ")
         elif cmd.kind == "setup":
             self.open_setup()
+        elif cmd.kind == "help":
+            self.open_commands()
+        elif cmd.kind == "stop":
+            self.stop_assistant(focus)
         else:
             self.run_assistant(cmd.text, focus)
 
@@ -177,6 +182,38 @@ class App:
                 self.our_windows = (self.our_windows & now) | new   # forget closed windows
                 self.agent_window[key] = max(new)
                 return
+
+    # Escape presses that interrupt each assistant's current work. OpenCode wants a second one
+    # ("esc again to interrupt", within a few seconds; tested 2026-11-21). Claude Code stops on
+    # the first, and a second would open its "rewind" menu.
+    STOP_PRESSES = {"claude": 1, "opencode": 2}
+
+    def stop_assistant(self, focus):
+        """ "<word> stop": interrupt the assistant's current work, as Escape in its window does.
+        The assistant window being dictated to, or else the one FT Assistant opened (brought to
+        the front)."""
+        if self.in_harness(focus):           # Escape goes to the focused window
+            wid, _cls, title = focus
+            key = harness.harness_from_title(title) or next(
+                (k for k, w in self.agent_window.items() if w == wid), None) or self.settings.harness
+        else:
+            self.settings = config.load()
+            key = self.settings.harness
+            wid = self.agent_window.get(key)
+            if wid is None or wid not in plat.terminal_windows() or not plat.activate_window(wid):
+                plat.notify("No assistant window is open to stop.")
+                return
+        for i in range(self.STOP_PRESSES.get(key, 1)):
+            if i:
+                time.sleep(0.3)
+            plat.press_escape()
+        log.debug("interrupted the %s window", key)
+
+    def open_commands(self):
+        """ "<word> help": the voice commands window, in its own process."""
+        if self.commands_proc is not None and self.commands_proc.poll() is None:
+            return
+        self.commands_proc = subprocess.Popen([sys.executable, "-m", "ft_assistant.voice_commands"])
 
     def open_setup(self):
         """Show the setup screen in its own process; the Assistant key is paused meanwhile."""

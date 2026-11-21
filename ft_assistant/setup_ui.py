@@ -13,7 +13,8 @@ import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from . import __version__, buildinfo, config, harness, keys, look, textproc, updater
+from . import (__version__, buildinfo, config, harness, keys, look, textproc, updater,
+               voice_commands)
 from . import plat
 
 CHANGED = 10
@@ -271,6 +272,9 @@ class SetupWindow:
                  insertbackground=FG, relief="flat", highlightthickness=1,
                  highlightbackground=BORDER, highlightcolor=ACCENT,
                  font="TkTextFont").grid(row=0, column=0, sticky="w", ipady=3)
+        ttk.Button(wrow, text="Voice commands...", command=self._show_commands).grid(
+            row=0, column=1, sticky="w", padx=(round(0.8 * self.base_px), 0))
+        self.commands_win = None
         r += 1
         self.word_msg = self._wrapping(ttk.Label(f, style="Note.TLabel"))
         self.word_msg.grid(row=r, sticky="w", pady=(4, 14))
@@ -328,6 +332,16 @@ class SetupWindow:
         root.update_idletasks()
         self._fit()
         root.deiconify()
+
+    def _show_commands(self):
+        """The voice commands window, with the command word and key as currently set here."""
+        if self.commands_win is not None and self.commands_win.winfo_exists():
+            self.commands_win.lift()
+            return
+        word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
+        self.commands_win = voice_commands.open_from_setup(
+            self.root, word, keys.display_name(self.trigger),
+            self.harness_var.get() == config.DICTATION_ONLY, self.base_px)
 
     # ---- size and scrolling
 
@@ -458,8 +472,9 @@ class SetupWindow:
                                     style="Warn.TLabel")
         else:
             self.word_msg.configure(
-                text=f"Start a dictation with \"{word}\" to send it to your assistant, or say "
-                     f"\"{word} setup\" to open this screen. After saving, try it a few times: "
+                text=f"Say \"{word}, ...\" and a request to send it to your assistant. "
+                     "\"Voice commands...\" lists everything you can say. After saving, try it "
+                     "a few times: "
                      "some words are easier for the speech engine to catch than others.",
                 style="Note.TLabel")
         self.key_label.configure(text=f"Current Assistant key: {name}")

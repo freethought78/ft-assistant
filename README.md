@@ -77,7 +77,10 @@ and keeps your settings, the speech model and anything already downloaded.
 |---|---|
 | Anything | It's typed into the window you're using. |
 | "Assistant, *request*" | The request goes to your assistant: into its window if you're already in it, otherwise it opens (continuing your last conversation). |
+| "Assistant" | Your assistant's window opens, with your current conversation. |
+| "Assistant stop" | Your assistant stops what it's doing right now (like pressing Esc in its window). |
 | "Assistant setup" | The setup screen opens. |
+| "Assistant help" | A list of these voice commands opens (also on the setup screen: "Voice commands..."). |
 
 - **Beeps:** a high beep means the microphone is listening. A lower beep when you let go means it
   heard the release.
