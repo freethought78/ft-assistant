@@ -82,6 +82,16 @@ Last updated: 2026-11-17 (full review and cleanup)
   from `next` (Caps Lock key) saw "FT Assistant" in Task Manager, but the Assistant key did
   nothing afterwards. The cause wasn't found yet. Suspect: the renamed `FT Assistant.exe` copy
   (a log and a plain-pythonw comparison were requested from the tester).
+- **v0.3.1** (2026-11-21): two fixes for "Assistant, ..." found right after 0.3.0 (see "Agent
+  windows opened again after an update" and "The agent's window is remembered" below):
+  - after an update, no agent window opened while another terminal was open (the update
+    window's terminal address was passed on to gnome-terminal); setup's install, update and
+    uninstall windows had the same problem;
+  - the agent's window is remembered across FT Assistant's restarts, for the login session, and
+    a reused window number never gets a request typed into it.
+
+  Tested live on the user's machine with `run-branch.sh next` (request sent to the open Claude
+  Code window after a restart). The Windows tester's open report from 0.3.0 is unchanged.
 
 ## Carried over from the current tool (unchanged)
 
