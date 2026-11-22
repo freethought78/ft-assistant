@@ -70,6 +70,16 @@ class HarnessCommands(unittest.TestCase):
                                  "ANTHROPIC_API_KEY": "k", "HOME": "/h"})
         self.assertEqual(env, {"PATH": "/bin", "HOME": "/h"})
 
+    def test_clean_env_drops_the_starting_terminals_window(self):
+        # Started from a terminal (the update window), FT Assistant inherits that window's
+        # address; gnome-terminal then opens no new window while another one is open.
+        env = harness.clean_env({
+            "PATH": "/bin", "DISPLAY": ":0", "TERM": "xterm-256color",
+            "GNOME_TERMINAL_SCREEN": "/org/gnome/Terminal/screen/gone",
+            "GNOME_TERMINAL_SERVICE": ":1.1815", "VTE_VERSION": "7600", "WINDOWID": "1",
+            "KONSOLE_DBUS_WINDOW": "/Windows/1", "WT_SESSION": "x"})
+        self.assertEqual(env, {"PATH": "/bin", "DISPLAY": ":0", "TERM": "xterm-256color"})
+
     def test_titles(self):
         self.assertEqual(harness.harness_from_title("OC | Fix the build"), "opencode")
         self.assertEqual(harness.harness_from_title("✳ FT Assistant title test"), "claude")
