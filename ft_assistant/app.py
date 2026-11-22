@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import buildinfo, config, harness, open_setup, procname, textproc, updater
+from . import agent_windows, buildinfo, config, harness, open_setup, procname, textproc, updater
 from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -27,6 +27,7 @@ from .setup_ui import CHANGED as SETUP_CHANGED
 MIN_SEC = 0.35             # ignore taps shorter than this
 MIN_RMS = 0.002            # ignore near-silent recordings
 OPENED_WINDOW_WAIT = 8.0   # seconds to watch for the terminal window we just opened
+TITLE_WAIT = 20.0          # and then for its assistant to set the window title
 
 log = logging.getLogger("ft_assistant")
 
@@ -63,8 +64,18 @@ class App:
         self.jobs = queue.Queue()
         self.ctl = threading.Lock()
         self.down = False
-        self.our_windows = set()        # terminal windows this tool opened for an agent
-        self.agent_window = {}          # harness key -> its most recent window we opened
+        # The agent's window survives FT Assistant's own restarts (an update): remembered for
+        # the login session, see agent_windows.py.
+        self.window_file = agent_windows.state_file()
+        self.login = plat.login_session()
+        self.windows_lock = threading.Lock()
+        self.agent_window = agent_windows.load(self.window_file, self.login)
+        # harness key -> its most recent window we opened
+        self.our_windows = set(self.agent_window.values())  # terminal windows we opened for one
+        # Windows that showed their assistant's title (and every remembered one): they must
+        # still show it to count as ours, since window numbers get reused (gnome-terminal gives
+        # a new window the number of one just closed).
+        self.titled = set(self.our_windows)
         self.setup_proc = None          # the setup screen, while it's open
         self.commands_proc = None       # the voice commands window ("<word> help")
         self.listener = None            # the current Assistant key listener
@@ -143,9 +154,35 @@ class App:
         wid, cls, title = focus
         if wid is None:
             return False
-        if wid in self.our_windows:
+        if wid in self.our_windows and self._still_ours(wid, title):
             return True
         return plat.is_terminal_class(cls) and harness.harness_from_title(title) is not None
+
+    def _still_ours(self, wid, title, key=None):
+        """Is a window we opened still that assistant's window (not a reused window number)?"""
+        shown = harness.harness_from_title(title)
+        if shown is not None and (key is None or shown == key):
+            self.titled.add(wid)
+            return True
+        return wid not in self.titled
+
+    def agent_window_for(self, key):
+        """The open window we opened for this harness, or None (then forgotten)."""
+        wid = self.agent_window.get(key)
+        if wid is None:
+            return None
+        if wid in plat.terminal_windows() and self._still_ours(wid, plat.window_title(wid), key):
+            return wid
+        self._forget(wid)
+        return None
+
+    def _forget(self, wid):
+        with self.windows_lock:
+            self.our_windows.discard(wid)
+            self.titled.discard(wid)
+            for k in [k for k, w in self.agent_window.items() if w == wid]:
+                del self.agent_window[k]
+            agent_windows.save(self.window_file, self.login, dict(self.agent_window))
 
     def run_assistant(self, text, focus):
         if self.in_harness(focus):
@@ -160,8 +197,8 @@ class App:
             return
         key = self.settings.harness
         # One ongoing conversation: if its window is still open, bring it forward and send there.
-        wid = self.agent_window.get(key)
-        if wid is not None and wid in plat.terminal_windows() and plat.activate_window(wid):
+        wid = self.agent_window_for(key)
+        if wid is not None and plat.activate_window(wid):
             if text:
                 plat.type_text(text)
                 plat.press_enter()
@@ -179,9 +216,23 @@ class App:
             now = plat.terminal_windows()
             new = now - before
             if new:
-                self.our_windows = (self.our_windows & now) | new   # forget closed windows
-                self.agent_window[key] = max(new)
+                wid = max(new)
+                with self.windows_lock:
+                    self.our_windows = (self.our_windows & now) | new   # forget closed windows
+                    self.titled &= now
+                    self.agent_window[key] = wid
+                    agent_windows.save(self.window_file, self.login, dict(self.agent_window))
+                self._watch_title(wid, key)
                 return
+
+    def _watch_title(self, wid, key):
+        """Note when the new window shows its assistant's title (see self.titled)."""
+        end = time.time() + TITLE_WAIT
+        while time.time() < end and wid in plat.terminal_windows():
+            if harness.harness_from_title(plat.window_title(wid)) == key:
+                self.titled.add(wid)
+                return
+            time.sleep(0.5)
 
     # Escape presses that interrupt each assistant's current work. OpenCode wants a second one
     # ("esc again to interrupt", within a few seconds; tested 2026-11-21). Claude Code stops on
@@ -199,8 +250,8 @@ class App:
         else:
             self.settings = config.load()
             key = self.settings.harness
-            wid = self.agent_window.get(key)
-            if wid is None or wid not in plat.terminal_windows() or not plat.activate_window(wid):
+            wid = self.agent_window_for(key)
+            if wid is None or not plat.activate_window(wid):
                 plat.notify("No assistant window is open to stop.")
                 return
         for i in range(self.STOP_PRESSES.get(key, 1)):

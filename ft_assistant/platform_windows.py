@@ -366,6 +366,37 @@ def is_terminal_class(cls):
     return (cls or "").lower() in TERMINAL_CLASSES
 
 
+def window_title(hwnd):
+    """The window's current title ("" if it's gone)."""
+    return window_info(hwnd)[1]
+
+
+def login_session():
+    """An id for this login session, or None if unknown: the logon session's id from the
+    process token, with the hour the computer started (those ids repeat after a restart)."""
+    try:
+        import struct
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+        token = wintypes.HANDLE()
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008,   # TOKEN_QUERY
+                                         ctypes.byref(token)):
+            return None
+        try:
+            buf = ctypes.create_string_buffer(56)            # TOKEN_STATISTICS
+            size = wintypes.DWORD()
+            if not advapi32.GetTokenInformation(token, 10, buf, 56, ctypes.byref(size)):
+                return None
+        finally:
+            kernel32.CloseHandle(token)
+        low, high = struct.unpack_from("<Ii", buf.raw, 8)     # AuthenticationId
+        boot_hour = int((time.time() - kernel32.GetTickCount64() / 1000) // 3600)
+        return f"{high}:{low}@{boot_hour}"
+    except Exception:
+        return None
+
+
 def activate_window(hwnd):
     """Bring a window to the front. Windows only lets the active program do that, so a tap of
     Alt (injected, ignored by our hook) is sent first, the usual way around it."""

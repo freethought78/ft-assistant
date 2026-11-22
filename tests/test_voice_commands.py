@@ -39,6 +39,8 @@ class Stop(unittest.TestCase):
     def make_app(self):
         a = app.App.__new__(app.App)          # no engine, no key listener
         a.our_windows, a.agent_window, a.commands_proc = set(), {}, None
+        a.titled, a.window_file, a.login = set(), None, None
+        a.windows_lock = app.threading.Lock()
         a.settings = mock.Mock(harness="opencode")
         return a
 
@@ -59,6 +61,7 @@ class Stop(unittest.TestCase):
                 mock.patch.object(app.config, "load", return_value=a.settings):
             plat.is_terminal_class.return_value = False
             plat.terminal_windows.return_value = {9}
+            plat.window_title.return_value = "✳ Long task"
             plat.activate_window.return_value = True
             a.stop_assistant((1, "firefox", "Docs"))
         plat.press_escape.assert_called_once()                   # a second would open "rewind"
@@ -70,6 +73,7 @@ class Stop(unittest.TestCase):
                 mock.patch.object(app.config, "load", return_value=a.settings):
             plat.is_terminal_class.return_value = False
             plat.terminal_windows.return_value = {7}
+            plat.window_title.return_value = "OC | Long task"
             plat.activate_window.return_value = True
             a.stop_assistant((1, "firefox", "Docs"))
         plat.activate_window.assert_called_once_with(7)
