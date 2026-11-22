@@ -946,6 +946,52 @@ updates, run-branch.sh) can then find it and close it if needed.
   - **Not yet on a real Windows PC** (whether the Start menu lists them; it should, as they're
     standard shortcuts).
 
+### Agent windows opened again after an update (found and fixed 2026-11-21, after 0.3.0)
+
+- **The problem:** after the 0.3.0 update, "Assistant, ..." did nothing while a Claude Code
+  window was open: no new window, nothing typed, nothing in the log.
+- **Why:** the update restarts FT Assistant from the update window's terminal, so it inherited
+  that window's address (`GNOME_TERMINAL_SCREEN`, `GNOME_TERMINAL_SERVICE`). gnome-terminal then
+  tried to open each new window next to the closed update window. While any other gnome-terminal
+  window was open, it printed "Failed to get screen from object path", opened nothing and still
+  exited with 0. Setup's install, update and uninstall windows had the same problem.
+- **Fix:** `harness.clean_env` (used for every window FT Assistant opens) also drops the
+  variables terminals set for their own window or session (`TERMINAL_SESSION_VARS`: GNOME
+  Terminal, Konsole, Tilix, Terminator, kitty, Alacritty, WezTerm, Windows Terminal).
+- **Tested:** reproduced with throwaway windows (a terminal open, the stale variables set: no
+  window); with the fix the window opens.
+
+### The agent's window is remembered across FT Assistant's restarts (added and built 2026-11-21)
+
+- **Before:** FT Assistant remembered the window it opened for the assistant only in memory. After
+  a restart (an update, a crash), "Assistant, ..." opened a second window on the same
+  conversation instead of sending to the open one.
+- **Now** `agent_windows.py` keeps {assistant: window number} in a small file:
+  - **What's in it:** only window numbers and which assistant, with an id for the login session.
+    No text, no times.
+  - **Where:** Linux: the login session's runtime folder (`/run/user/<uid>/ft-assistant-agent-windows.json`,
+    emptied at logout); each build (installed, dev, branch test) has its own. Windows: FT
+    Assistant's settings folder.
+  - **Only in the same login session:** `login_session()` (Linux: boot id, login session and X
+    display; Windows: the logon session's id with the hour the computer started). A file from
+    another login is ignored. The file is removed when no window is left.
+- **Window numbers get reused** (seen 2026-11-21: gnome-terminal gave a new plain terminal the
+  number of the Claude Code window just closed). So a remembered window must still show its
+  assistant's title (Claude Code "✳ ...", OpenCode "OC | ...") before anything is typed into it.
+  The same now holds without a restart: once a window has shown its assistant's title, it must
+  keep it (`App.titled`). Before, a closed window's number reused by a plain terminal would
+  have got the request typed into the shell. A just-opened window still counts before its
+  title is set.
+- **Never a window FT Assistant didn't open:** a Claude Code window from another project has the
+  same kind of title, so windows aren't picked by title alone.
+- **Tested 2026-11-21:**
+  - Unit tests: saving and loading, another login ignored, a damaged file, a reused number not
+    typed into (sending and focus), a new window before its title.
+  - Throwaway windows on Linux: found after a simulated restart. A plain terminal that got the
+    closed window's number was not used, and the entry was forgotten.
+  - **Not yet:** a real update with an open Claude Code window. Windows: whether Claude Code sets
+    the console title there (if not, a restart opens a new window as before).
+
 ## On the `conversation-management` branch
 
 Built after the work on `next`, on a branch made from `next`; never merged until the user says so.

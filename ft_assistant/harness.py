@@ -58,12 +58,30 @@ def harness_from_title(title):
     return None
 
 
+# Variables a terminal sets for the programs running in it, naming that terminal's own window
+# or session. FT Assistant inherits them when it was started from a terminal (after an update,
+# from the update window). A new window must not get them: gnome-terminal tries to open its
+# window next to the one named in GNOME_TERMINAL_SCREEN and, once that window is closed, opens
+# nothing at all while any other terminal is open, without an error (found 2026-11-21: requests
+# went unanswered while a Claude Code window was open).
+TERMINAL_SESSION_VARS = (
+    "GNOME_TERMINAL_SCREEN", "GNOME_TERMINAL_SERVICE", "VTE_VERSION", "WINDOWID",
+    "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID",
+    "KONSOLE_DBUS_SERVICE", "KONSOLE_DBUS_SESSION", "KONSOLE_DBUS_WINDOW", "KONSOLE_VERSION",
+    "SHELL_SESSION_ID", "TILIX_ID", "TERMINATOR_UUID", "TERMINATOR_DBUS_NAME",
+    "TERMINATOR_DBUS_PATH", "KITTY_WINDOW_ID", "KITTY_PID", "KITTY_LISTEN_ON",
+    "ALACRITTY_WINDOW_ID", "ALACRITTY_SOCKET", "WEZTERM_PANE", "WEZTERM_UNIX_SOCKET",
+    "WT_SESSION", "WT_PROFILE_ID",
+)
+
+
 def clean_env(base=None):
-    """Environment for a new agent: drop anything inherited from a Claude/Anthropic session
-    (an inherited "child session" marker turns off Claude Code's transcripts and titles)."""
+    """Environment for a new window (agent, install, update or uninstall): drop anything
+    inherited from a Claude/Anthropic session (an inherited "child session" marker turns off
+    Claude Code's transcripts and titles) and from the terminal FT Assistant was started in."""
     env = dict(os.environ if base is None else base)
     for k in list(env):
-        if k.startswith(("CLAUDE", "ANTHROPIC")):
+        if k.startswith(("CLAUDE", "ANTHROPIC")) or k in TERMINAL_SESSION_VARS:
             del env[k]
     return env
 

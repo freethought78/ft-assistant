@@ -317,6 +317,24 @@ def is_terminal_class(cls):
     return (cls or "").lower() in TERMINAL_CLASSES
 
 
+def window_title(wid):
+    """The window's current title ("" if it's gone)."""
+    global _wdpy
+    with _wlock:
+        if _wdpy is None:
+            _wdpy = display.Display()
+        return window_info(int(wid))[1]
+
+
+def login_session():
+    """An id for this login session (boot, login and X display), or None if unknown."""
+    try:
+        boot = open("/proc/sys/kernel/random/boot_id", encoding="ascii").read().strip()
+    except OSError:
+        return None
+    return f"{boot}/{os.environ.get('XDG_SESSION_ID', '')}/{os.environ.get('DISPLAY', '')}"
+
+
 def notify(msg, title="FT Assistant"):
     subprocess.Popen(["notify-send", "-a", "FT Assistant", "-t", "4000", title, msg],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
