@@ -41,5 +41,34 @@ class FitWindow(unittest.TestCase):
         self.assertLessEqual(h + setup_ui.DECOR_H, 300)
 
 
+
+@unittest.skipIf(setup_ui is None, "needs tkinter")
+class ShortScreen(unittest.TestCase):
+    """The setup screen stays short: the command word only gets a line when there's something
+    to say about it."""
+
+    def screen(self, saved="Assistant"):
+        from unittest import mock
+        w = setup_ui.SetupWindow.__new__(setup_ui.SetupWindow)
+        w.original = mock.Mock(keyword=saved)
+        return w
+
+    def test_nothing_under_an_unchanged_word(self):
+        self.assertEqual(self.screen().word_message("Assistant"), ("", None))
+        self.assertEqual(self.screen().word_message("assistant"), ("", None))
+
+    def test_a_tip_once_its_changed(self):
+        self.assertEqual(self.screen().word_message("Jarvis"),
+                         (setup_ui.WORD_TRY_TIP, "Note.TLabel"))
+
+    def test_problems_are_shown(self):
+        msg, style = self.screen().word_message("two words")
+        self.assertEqual(style, "Warn.TLabel")
+        self.assertTrue(msg)
+
+    def test_explanations_moved_to_the_voice_commands_window(self):
+        self.assertFalse(hasattr(setup_ui, "PRIVACY_NOTE"))
+
+
 if __name__ == "__main__":
     unittest.main()

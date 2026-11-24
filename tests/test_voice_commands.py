@@ -21,6 +21,20 @@ class CommandList(unittest.TestCase):
         self.assertIn("choose one on the setup screen",
                       " ".join(voice_commands.notes("Assistant", dictation_only=True)))
 
+    def test_good_to_know_has_the_privacy_note(self):
+        notes = " ".join(voice_commands.notes("Jarvis"))
+        self.assertIn("Dictation never leaves this computer", notes)
+        self.assertIn("\"Jarvis\"", notes)
+        self.assertIn("nothing you say is sent anywhere",
+                      " ".join(voice_commands.notes("Jarvis", dictation_only=True)))
+
+    def test_each_note_is_one_sentence(self):
+        # Keep it simple: one sentence per note, nothing long to read.
+        for dictation_only in (False, True):
+            for line in voice_commands.notes("Assistant", dictation_only):
+                self.assertEqual(line.count(". "), 0, line)
+                self.assertLess(len(line), 140, line)
+
     def test_stays_short(self):
         # FT Assistant should stay simple: at most about 7 voice commands, ever.
         self.assertLessEqual(len(voice_commands.COMMANDS), 7)

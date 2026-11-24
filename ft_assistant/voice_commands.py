@@ -3,7 +3,9 @@ word. Opened by the "Voice commands..." button on the setup screen, or by saying
 (then as its own process: python -m ft_assistant.voice_commands).
 
 The list stays short on purpose (at most about 7 commands): FT Assistant should stay simple and
-easy to understand out of the box. See the voice commands plan in docs/design-notes.md."""
+easy to understand out of the box. Explanations live here, under "Good to know", one sentence
+each, instead of on the setup screen (the user's decision, 2026-11-23). See the voice commands
+plan and "Setup screen: less on it" in docs/design-notes.md."""
 
 import tkinter as tk
 from tkinter import ttk
@@ -29,10 +31,14 @@ def command_list(word, dictation_only=False):
 
 
 def notes(word, dictation_only=False):
+    """The "Good to know" lines under the list: one sentence each."""
     out = [f"Anything you say without \"{word}\" first is typed where your cursor is."]
     if dictation_only:
+        out.append("Everything stays on this computer: nothing you say is sent anywhere.")
         out.append("Requests to an assistant work once you choose one on the setup screen.")
     else:
+        out.append(f"Dictation never leaves this computer; requests that start with \"{word}\" "
+                   "go to your assistant's online AI service.")
         out.append("When your assistant asks to approve something, answer with the keyboard: "
                    "voice never approves anything.")
     return out
@@ -54,9 +60,12 @@ def fill(win, word, key_name, dictation_only, base_px, on_close):
             row=r, column=0, sticky="nw", padx=(0, pad), pady=3)
         ttk.Label(f, text=does, wraplength=wrap).grid(row=r, column=1, sticky="nw", pady=3)
         r += 1
-    for i, line in enumerate(notes(word, dictation_only)):
+    ttk.Label(f, text="Good to know", style="Head.TLabel").grid(
+        row=r, columnspan=2, sticky="w", pady=(pad, 2))
+    r += 1
+    for line in notes(word, dictation_only):
         ttk.Label(f, text=line, wraplength=wrap + round(8 * base_px), style="Note.TLabel").grid(
-            row=r, columnspan=2, sticky="w", pady=(10 if i == 0 else 4, 0))
+            row=r, columnspan=2, sticky="w", pady=(4, 0))
         r += 1
     close = ttk.Button(f, text="Close", command=on_close)
     close.grid(row=r, columnspan=2, sticky="e", pady=(pad, 0))

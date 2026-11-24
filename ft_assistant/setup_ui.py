@@ -23,11 +23,10 @@ CAPTURE_SECONDS = 15
 IS_WINDOWS = sys.platform == "win32"
 INSTALL_WATCH_SECONDS = 30 * 60   # how long the screen watches for an install to finish
 
-PRIVACY_NOTE_DICTATION_ONLY = ("Everything stays on this computer: nothing you say is sent "
-                               "anywhere.")
-PRIVACY_NOTE = ("Normal dictation never leaves this computer. Requests that start with "
-                "\"{word}\" are sent to the assistant's online AI service (Anthropic for "
-                "Claude Code, OpenCode's model provider for OpenCode).")
+# Keep this screen short (the user's decision, 2026-11-23): explanations go to the voice commands
+# window ("Good to know"), not here, and new features don't add settings to it.
+WORD_TRY_TIP = ("After saving, try it a few times: some words are easier for the speech engine "
+                "to catch than others.")
 
 
 # Dark theme colors
@@ -66,6 +65,7 @@ def desktop_look(root):
         f = tkfont.nametofont("TkDefaultFont", root).actual()
         size = f.get("size") or 0
         pt = size if size > 0 else (-size / px_per_pt if size else None)
+        pt = look.windows_points(pt, look.windows_text_scale())     # "Text size" setting
         family, factor = f.get("family"), 1.0
     else:
         px_per_pt = (look.xft_dpi() or 96) / 72
@@ -206,12 +206,11 @@ class SetupWindow:
         r = 0
         ttk.Label(f, text="FT Assistant setup", style="Title.TLabel").grid(row=r, sticky="w")
         r += 1
-        self.hint = self._wrapping(ttk.Label(f))
-        self.hint.grid(row=r, sticky="w", pady=(4, 12))
-        r += 1
+        gap = round(1.1 * self.base_px)            # space above each section's heading
 
         # ---- assistant choice
-        ttk.Label(f, text="Assistant", style="Head.TLabel").grid(row=r, sticky="w")
+        ttk.Label(f, text="Assistant", style="Head.TLabel").grid(row=r, sticky="w",
+                                                                 pady=(round(0.8 * self.base_px), 0))
         r += 1
         initial = settings.harness
         if first_run and not any(harness.find_exe(h) for h in harness.HARNESSES.values()):
@@ -236,13 +235,10 @@ class SetupWindow:
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
-        self.privacy = self._wrapping(ttk.Label(f, text=PRIVACY_NOTE.format(word=settings.keyword),
-                                                style="Note.TLabel"))
-        self.privacy.grid(row=r, sticky="w", pady=(4, 14))
-        r += 1
 
         # ---- Assistant key
-        ttk.Label(f, text="Assistant key", style="Head.TLabel").grid(row=r, sticky="w")
+        ttk.Label(f, text="Assistant key", style="Head.TLabel").grid(row=r, sticky="w",
+                                                                     pady=(gap, 0))
         r += 1
         krow = ttk.Frame(f)
         krow.grid(row=r, sticky="we")
@@ -254,16 +250,22 @@ class SetupWindow:
         r += 1
         self.capture_msg = self._wrapping(ttk.Label(f, style="Warn.TLabel"))
         self.capture_msg.grid(row=r, sticky="w", pady=(2, 2))
+        self.capture_msg.grid_remove()
         r += 1
-        self._wrapping(ttk.Label(f, text="Good choices: " + keys.GOOD_CHOICES,
-                                 style="Note.TLabel")).grid(row=r, sticky="w", pady=(2, 2))
-        r += 1
-        self._wrapping(ttk.Label(f, text="Best avoided: " + keys.BEST_AVOIDED,
-                                 style="Note.TLabel")).grid(row=r, sticky="w", pady=(2, 14))
+        # Tips for choosing a key: only while choosing one ("Change key")
+        self.key_tips = ttk.Frame(f)
+        self.key_tips.grid(row=r, sticky="we")
+        self.key_tips.columnconfigure(0, weight=1)
+        self._wrapping(ttk.Label(self.key_tips, text="Good choices: " + keys.GOOD_CHOICES,
+                                 style="Note.TLabel")).grid(row=0, sticky="w", pady=(2, 2))
+        self._wrapping(ttk.Label(self.key_tips, text="Best avoided: " + keys.BEST_AVOIDED,
+                                 style="Note.TLabel")).grid(row=1, sticky="w", pady=(2, 0))
+        self.key_tips.grid_remove()
         r += 1
 
         # ---- command word
-        ttk.Label(f, text="Command word", style="Head.TLabel").grid(row=r, sticky="w")
+        ttk.Label(f, text="Command word", style="Head.TLabel").grid(row=r, sticky="w",
+                                                                    pady=(gap, 0))
         r += 1
         wrow = ttk.Frame(f)
         wrow.grid(row=r, sticky="we")
@@ -277,12 +279,14 @@ class SetupWindow:
         self.commands_win = None
         r += 1
         self.word_msg = self._wrapping(ttk.Label(f, style="Note.TLabel"))
-        self.word_msg.grid(row=r, sticky="w", pady=(4, 14))
+        self.word_msg.grid(row=r, sticky="w", pady=(4, 0))
+        self.word_msg.grid_remove()
         r += 1
         self.word_var.trace_add("write", lambda *a: self._refresh())
 
         # ---- updates / uninstall
-        ttk.Label(f, text="Updates and uninstall", style="Head.TLabel").grid(row=r, sticky="w")
+        ttk.Label(f, text="Updates and uninstall", style="Head.TLabel").grid(row=r, sticky="w",
+                                                                             pady=(gap, 0))
         r += 1
         urow = ttk.Frame(f)
         urow.grid(row=r, sticky="w", pady=(2, 2))
@@ -459,24 +463,30 @@ class SetupWindow:
 
     # ---- state
 
+    @staticmethod
+    def _say(label, text, style=None):
+        """Show a message line, or hide it (no empty space) when there's nothing to say."""
+        label.configure(text=text, **({"style": style} if style else {}))
+        if text:
+            label.grid()
+        else:
+            label.grid_remove()
+
+    def word_message(self, entered):
+        """(message, style) under the command word: a problem with it, or a tip once it's
+        changed; nothing otherwise."""
+        word, error, warning = textproc.check_keyword(entered)
+        if error:
+            return error, "Warn.TLabel"
+        if warning:
+            return warning + " It's allowed, but a rarer word works better.", "Warn.TLabel"
+        if word.casefold() != self.original.keyword.casefold():
+            return WORD_TRY_TIP, "Note.TLabel"
+        return "", None
+
     def _refresh(self):
         name = keys.display_name(self.trigger)
-        word, error, warning = textproc.check_keyword(self.word_var.get())
-        shown = word or self.original.keyword
-        self.hint.configure(text=f"To open this screen again, hold {name} and say "
-                                 f"\"{shown} setup\".")
-        if error:
-            self.word_msg.configure(text=error, style="Warn.TLabel")
-        elif warning:
-            self.word_msg.configure(text=warning + " It's allowed, but a rarer word works better.",
-                                    style="Warn.TLabel")
-        else:
-            self.word_msg.configure(
-                text=f"Say \"{word}, ...\" and a request to send it to your assistant. "
-                     "\"Voice commands...\" lists everything you can say. After saving, try it "
-                     "a few times: "
-                     "some words are easier for the speech engine to catch than others.",
-                style="Note.TLabel")
+        self._say(self.word_msg, *self.word_message(self.word_var.get()))
         self.key_label.configure(text=f"Current Assistant key: {name}")
         for key, h in harness.HARNESSES.items():
             installed = harness.find_exe(h) is not None
@@ -490,8 +500,6 @@ class SetupWindow:
             else:
                 self.install_btn[key].grid()
         choice = self.harness_var.get()
-        self.privacy.configure(text=PRIVACY_NOTE_DICTATION_ONLY if choice == config.DICTATION_ONLY
-                               else PRIVACY_NOTE.format(word=shown))
         chosen = choice in config.CHOICES
         self.save_btn.configure(state="normal" if chosen and not self.capturing else "disabled")
 
@@ -543,6 +551,7 @@ class SetupWindow:
         self.capturing = True
         self.change_btn.configure(state="disabled")
         self.capture_deadline = time.time() + CAPTURE_SECONDS
+        self.key_tips.grid()
         self._show_countdown()
         self._refresh()
         threading.Thread(target=lambda: self.capture_q.put(plat.capture_next(CAPTURE_SECONDS)),
@@ -551,8 +560,8 @@ class SetupWindow:
 
     def _show_countdown(self):
         left = max(0, int(round(self.capture_deadline - time.time())))
-        self.capture_msg.configure(text=f"Press the key or mouse button you want to use now... "
-                                        f"({left} seconds left)")
+        self._say(self.capture_msg, f"Press the key or mouse button you want to use now... "
+                                    f"({left} seconds left)")
 
     def _poll_capture(self):
         try:
@@ -563,6 +572,7 @@ class SetupWindow:
             return
         self.capturing = False
         self.change_btn.configure(state="normal")
+        self.key_tips.grid_remove()
         if trig is None:
             self.capture_msg.configure(text="No key was pressed. The Assistant key is unchanged.")
         elif keys.refusal(trig):

@@ -1017,13 +1017,13 @@ updates, run-branch.sh) can then find it and close it if needed.
   - **Not yet:** a real update with an open Claude Code window. Windows: whether Claude Code sets
     the console title there (if not, a restart opens a new window as before).
 
-### Setup screen: less on it; explanations go to the voice commands window (added 2026-11-23, not started)
+### Setup screen: less on it; explanations go to the voice commands window (added and built 2026-11-23)
 
 **The user's direction (2026-11-23):** the setup screen should get shorter, not keep growing. New
 features don't add settings or explanations to it. Descriptions go into the window that lists the
 voice commands (opened by "<word> help" or the "Voice commands..." button).
 
-**Proposed (for the user to review):**
+**Built as proposed (the user approved it, 2026-11-23):**
 - **Moves to the voice commands window**, as short notes under the list:
   - the privacy note (normal dictation stays on this computer; requests go to the assistant's
     online service);
@@ -1035,7 +1035,22 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
   command word (with its error or warning, when there is one), "Voice commands...", updates and
   uninstall, the version, Save and Cancel.
 - **The voice commands window** keeps its short list (at most about 7 commands) and gets a "Good
-  to know" part under it for these notes. Each note is one or two sentences.
+  to know" part under it for these notes. Each note is one sentence (a test checks it).
+- **Under the command word,** a line appears only for a problem with the word, or for the "try it
+  a few times" tip once it's changed. The key and word messages take no space when empty.
+
+**Text a little bigger, for poor eyesight (the user's request, 2026-11-23):**
+- **A reading boost:** both windows' text is 20 % bigger than the desktop's normal text
+  (`look.READING_BOOST`). On the user's desktop (Ubuntu 10): 12 pt.
+- **Large-text settings are honoured further:** the limit went from 18 to 28 points, so a desktop
+  set to large text isn't cut back.
+- **Windows' "Text size" setting** (Settings > Accessibility) is followed, besides display
+  scaling: `HKCU\Software\Microsoft\Accessibility\TextScaleFactor`. Windows may already have
+  enlarged its interface font for it, so the larger of the two is used, never both.
+- **Considered and set aside:** sizing by a share of the screen (unpredictable: huge on big
+  monitors) and Ctrl +/- zoom (hidden, so those who need it wouldn't find it).
+- **Small screens** still work as before: the text shrinks to at most 85 % before scrolling.
+- **Not yet checked on a real Windows PC** (the bottle has no Text size setting).
 
 ### A notice when the assistant window doesn't open (added 2026-11-23, not started)
 
