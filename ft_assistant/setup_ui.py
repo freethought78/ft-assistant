@@ -3,6 +3,7 @@
 Run as its own process (python -m ft_assistant.setup_ui) so the main app keeps running.
 Exit code 10 means settings were saved and changed; 0 means nothing changed."""
 
+import dataclasses
 import queue
 import subprocess
 import sys
@@ -13,7 +14,7 @@ import webbrowser
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
-from . import (__version__, buildinfo, config, harness, keys, look, textproc, updater,
+from . import (__version__, buildinfo, config, harness, keys, look, notes, textproc, updater,
                voice_commands)
 from . import plat, procname
 
@@ -134,6 +135,12 @@ def apply_dark_theme(root, family, base_px):
     style.configure("Vertical.TScrollbar", background=BUTTON, troughcolor=BG, bordercolor=BG,
                     arrowcolor=FG, lightcolor=BUTTON, darkcolor=BUTTON)
     style.map("Vertical.TScrollbar", background=[("active", BUTTON_ACTIVE)])
+    style.configure("TCheckbutton", background=BG, foreground=FG, indicatorbackground=BUTTON,
+                    indicatorforeground=FG, indicatormargin=(0, 0, 8, 0))
+    style.map("TCheckbutton",
+              background=[("active", BG)],
+              indicatorbackground=[("selected", ACCENT), ("active", BUTTON_ACTIVE)],
+              foreground=[("disabled", DISABLED)])
     style.configure("TRadiobutton", background=BG, foreground=FG, indicatorbackground=BUTTON,
                     indicatorforeground=FG, indicatormargin=(0, 0, 8, 0))
     style.map("TRadiobutton",
@@ -169,7 +176,8 @@ def installed_dir():
 class SetupWindow:
     def __init__(self, root, settings, first_run):
         self.root = root
-        self.original = config.Settings(settings.harness, dict(settings.trigger), settings.keyword)
+        # Every setting, also those this screen doesn't show (kept as they are on Save)
+        self.original = dataclasses.replace(settings, trigger=dict(settings.trigger))
         self.trigger = dict(settings.trigger)
         self.first_run = first_run
         self.capture_q = queue.Queue()
@@ -235,6 +243,13 @@ class SetupWindow:
                                                command=lambda k=key: self._install(k))
             self.install_btn[key].grid(row=0, column=2)
             r += 1
+        # Conversation notes: on or off, never deleted (notes.py)
+        self.notes_var = tk.BooleanVar(value=settings.conversation_notes)
+        self.notes_check = ttk.Checkbutton(
+            f, text="Conversation notes: new conversations can pick up earlier work",
+            variable=self.notes_var)
+        self.notes_check.grid(row=r, sticky="w", pady=(round(0.5 * self.base_px), 0))
+        r += 1
 
         # ---- Assistant key
         ttk.Label(f, text="Assistant key", style="Head.TLabel").grid(row=r, sticky="w",
@@ -346,7 +361,7 @@ class SetupWindow:
         self.commands_win = voice_commands.open_from_setup(
             self.root, word, keys.display_name(self.trigger),
             self.harness_var.get() == config.DICTATION_ONLY, self.base_px,
-            getattr(self.original, "quiet_gap_minutes", 0))
+            getattr(self.original, "quiet_gap_minutes", 0), self.notes_var.get())
 
     # ---- size and scrolling
 
@@ -501,6 +516,8 @@ class SetupWindow:
             else:
                 self.install_btn[key].grid()
         choice = self.harness_var.get()
+        self.notes_check.configure(state="disabled" if choice == config.DICTATION_ONLY
+                                   else "normal")
         chosen = choice in config.CHOICES
         self.save_btn.configure(state="normal" if chosen and not self.capturing else "disabled")
 
@@ -687,7 +704,9 @@ class SetupWindow:
         if warning and word != self.original.keyword and not messagebox.askyesno(
                 "Use this command word?", warning + "\n\nUse it anyway?", parent=self.root):
             return
-        new = config.Settings(self.harness_var.get(), dict(self.trigger), word)
+        new = dataclasses.replace(self.original, harness=self.harness_var.get(),
+                                  trigger=dict(self.trigger), keyword=word,
+                                  conversation_notes=self.notes_var.get())
         if new.harness not in config.CHOICES:
             return
         # Dictation only needs no assistant, so there's nothing to check or ask about.
@@ -698,6 +717,12 @@ class SetupWindow:
                 "requests won't work until it is. Save anyway?", parent=self.root):
             return
         config.save(new)
+        if new.uses_assistant and new.conversation_notes != self.original.conversation_notes:
+            try:
+                notes.apply(config.sessions_dir(), new.conversation_notes)
+            except OSError as e:
+                messagebox.showwarning("Conversation notes", "Couldn't update the conversation "
+                                       f"notes in your sessions folder ({e}).", parent=self.root)
         self.root.destroy()
         sys.exit(CHANGED if new != self.original else 0)
 

@@ -129,6 +129,18 @@ class NewConversations(unittest.TestCase):
                             focus=(9, "gnome-terminal-server", "OC | Old"))
         self.assertEqual(typed, ["/new", "<Enter>", "next thing", "<Enter>"])   # OpenCode's
 
+    def test_conversation_notes_follow_the_setting(self):
+        from ft_assistant import notes
+        a = self.make_app()
+        a.settings.conversation_notes = True
+        self.ask(a, "check it", last=time.time())
+        claude_md = config.sessions_dir() / "CLAUDE.md"
+        self.assertIn("read notes/INDEX.md", claude_md.read_text())
+        a.settings.conversation_notes = False
+        self.ask(a, "check it", last=time.time())
+        self.assertIn("turned off", claude_md.read_text())
+        self.assertTrue((config.sessions_dir() / notes.NOTES_DIR).exists())   # never deleted
+
     def test_dictating_in_the_window_ignores_the_gap(self):
         typed, open_session = self.ask(self.make_app(), "go on", last=0,
                                        focus=(9, "gnome-terminal-server", "✳ Old"))

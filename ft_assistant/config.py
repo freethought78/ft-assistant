@@ -68,6 +68,7 @@ class Settings:
     trigger: dict = field(default_factory=lambda: dict(DEFAULT_TRIGGER))
     keyword: str = "Assistant"     # the command word: "<keyword>, request" / "<keyword> setup"
     quiet_gap_minutes: int = QUIET_GAP_MINUTES      # 0: always continue the conversation
+    conversation_notes: bool = True   # the assistant keeps notes (setup screen; see notes.py)
 
     @property
     def harness_chosen(self):
@@ -109,6 +110,8 @@ def load():
     gap = data.get("quiet_gap_minutes")
     if isinstance(gap, int) and not isinstance(gap, bool) and 0 <= gap <= 24 * 60:
         s.quiet_gap_minutes = gap
+    if isinstance(data.get("conversation_notes"), bool):
+        s.conversation_notes = data["conversation_notes"]
     return s
 
 

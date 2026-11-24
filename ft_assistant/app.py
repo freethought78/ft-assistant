@@ -20,7 +20,8 @@ import time
 
 import numpy as np
 
-from . import agent_windows, buildinfo, config, harness, open_setup, procname, textproc, updater
+from . import (agent_windows, buildinfo, config, harness, notes, open_setup, procname, textproc,
+               updater)
 from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
@@ -232,6 +233,14 @@ class App:
         last = harness.last_activity(key, config.sessions_dir())
         return last is not None and time.time() - last > gap * 60
 
+    def apply_notes(self):
+        """Keep the sessions folder's instructions matching the conversation notes setting
+        (setup screen), before a conversation starts or continues there."""
+        try:
+            notes.apply(config.sessions_dir(), self.settings.conversation_notes)
+        except OSError:
+            log.warning("couldn't update the conversation notes instructions", exc_info=True)
+
     def new_conversation_here(self, key):
         """Start a new conversation in the focused assistant window: /clear (Claude Code) or /new
         (OpenCode). The old conversation stays saved."""
@@ -255,6 +264,7 @@ class App:
                         f"\"{self.settings.keyword} setup\".")
             return
         key = self.settings.harness
+        self.apply_notes()
         if text and not new and self.quiet_too_long(key):
             new = True
             log.debug("quiet gap passed: new %s conversation", key)

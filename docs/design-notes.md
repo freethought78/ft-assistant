@@ -1256,11 +1256,40 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
   after an OpenCode update, not only this; left as is for now.
 - **Not yet:** a live test with dictation.
 
+**Built (second part, 2026-11-23, on this branch): conversation notes** (the "topic notes"
+above; the user calls them conversation notes).
+- **On or off is a checkbox on the setup screen**, under the assistant choice: "Conversation
+  notes: new conversations can pick up earlier work". On by default. The user chose this over
+  deleting files or a voice command (2026-11-23): an exception to "no new settings", because
+  people should see whether notes are on.
+- **Turning off never deletes notes,** so no warning is needed: turning on again brings them
+  back. (Had off meant deleting, the user wanted a confirmation first.)
+- **How (`notes.py`):** FT Assistant doesn't write notes. It keeps a block of instructions,
+  between markers, in `CLAUDE.md` and `AGENTS.md` in the sessions folder (each assistant reads
+  its file at the start of every conversation there). On: read `notes/INDEX.md` at the start, read
+  a matching note, write a short note with a descriptive index line when finishing something worth
+  keeping, look through old conversations only when the user refers to earlier work, never put
+  secrets in notes. Off: one line, "don't read or write the notes/ folder unless the user asks".
+  Anything the user writes outside the markers is kept. Off creates nothing in a folder that never
+  had notes.
+- **Applied** before every "<word>, ..." from outside the assistant's window, and when Save on the
+  setup screen changes the checkbox. An open conversation follows the change from its next
+  conversation on.
+- **Explained** by one "Good to know" line: where the notes are, and that the setup screen turns
+  them off.
+- **Fixed on the way:** Save on the setup screen rebuilt the settings from the three it shows, so it
+  would have reset a custom `quiet_gap_minutes`. It now keeps every setting it doesn't show.
+- **Tests never touch the real sessions folder:** `tests/__init__.py` points
+  `FT_ASSISTANT_SESSIONS_DIR` at a throwaway folder (a first test run wrote the instructions into
+  the user's real, empty sessions folder; they were checked and removed the same minute).
+- **Tested 2026-11-23:** unit tests (on; off keeps notes; on again; the user's own text kept; off
+  creates nothing new; no needless rewrites; an existing index kept; the setting; saving keeps
+  other settings; the "Good to know" line; the app follows the setting).
+- **Not yet:** a live check that the assistants actually keep and use notes.
+
 **Still open:**
-- **Turning topic notes off** without a setup-screen setting: deleting the notes folder, a
-  voice command, or only `settings.json`.
-- **The privacy explanation for topic notes,** since they're on by default: it goes in the voice
-  commands window and the release notes. Existing users get a notice when they update.
+- **Telling existing users** about conversation notes when they update (on by default): the
+  release notes, besides the "Good to know" line. Turning them off was settled (the checkbox).
 
 ## Open questions
 
