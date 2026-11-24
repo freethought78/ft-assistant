@@ -28,8 +28,8 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
 
 ### Branches and releases
 
-- **`main` = released code** (latest tag `v0.3.1`; the user's install is 0.3.0 until they accept the update). **`next` = development**
-  (now 0.4.0.dev0).
+- **`main` = released code** (latest tag `v0.4.0`; the user's install is 0.3.1 until they accept the update). **`next` = development**
+  (now 0.5.0.dev0).
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
   merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
   `gh release create vX.Y.Z dist/FT-Assistant-Installer.cmd dist/FT-Assistant-setup.cmd` (as
@@ -113,7 +113,7 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
   check `gh auth status` shows `freethought78` as the active account; if not, ask the user to
   sign in (`gh auth login`) or switch (`gh auth switch`) themselves.
 - The repo is **public**: https://github.com/freethought78/ft-assistant (created 2026-11-18;
-  releases: v0.1.0 to v0.3.1). Never commit personal details (health, other
+  releases: v0.1.0 to v0.4.0). Never commit personal details (health, other
   projects, emails); history was scrubbed once before the first push.
 
 ## Working with the user
