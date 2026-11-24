@@ -9,18 +9,25 @@ same font and size as the rest of the user's desktop, so it reads like any other
   (Xft.dpi). Pixels, because Tk would otherwise use the X server's physical DPI, which is often
   wrong (a wide monitor can report 54 DPI and make 10-point text tiny).
 - Windows: Windows' own interface font and size, which is what Tk starts with; the window is
-  made DPI-aware, so the size follows Windows' display scaling and stays sharp.
+  made DPI-aware, so the size follows Windows' display scaling and stays sharp. Windows'
+  separate "Text size" setting (Accessibility) is followed too.
 
-The size is kept readable: never below 9 points or above 18 points (accessibility settings up
-to that are honoured). If the window still doesn't fit the screen, setup_ui shrinks the text a
-little (at most to 85 %, never below 9 points) before the content scrolls."""
+Then a little bigger than the desktop's normal text (READING_BOOST, 20 %): these windows are
+read rarely and briefly, and someone with poor eyesight shouldn't have to squint at them (the
+user's decision, 2026-11-23). The size is kept readable: never below 9 points or above 28 points,
+so large-text accessibility settings are honoured. If the window still doesn't fit the screen,
+setup_ui shrinks the text a little (at most to 85 %, never below 9 points) before the content
+scrolls."""
 
 import os
 import re
 import subprocess
+import sys
 
 DEFAULT_PT = 10.0
-MIN_PT, MAX_PT = 9.0, 18.0
+MIN_PT, MAX_PT = 9.0, 28.0
+READING_BOOST = 1.2        # these windows' text, compared with the desktop's normal text
+WINDOWS_DEFAULT_PT = 9.0   # Windows' interface text at "Text size" 100 %
 FIT_SHRINK = 0.85          # how far the text may shrink to fit the screen before it scrolls
 HEAD_RATIO, TITLE_RATIO = 1.15, 1.45
 _STYLE_WORDS = {"regular", "book", "normal", "medium", "bold", "semi-bold", "semibold",
@@ -118,9 +125,34 @@ def xft_dpi(run=_run):
     return None
 
 
-def text_points(points, factor=1.0):
-    """The interface text size in points: the desktop's, kept between MIN_PT and MAX_PT."""
-    pt = (points or DEFAULT_PT) * (factor or 1.0)
+def windows_text_scale(read=None):
+    """Windows' "Text size" setting (Settings > Accessibility) as a factor: 1.0 to 2.25."""
+    if read is None:
+        if sys.platform != "win32":
+            return 1.0
+
+        def read():
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Accessibility") as k:
+                return winreg.QueryValueEx(k, "TextScaleFactor")[0]
+    try:
+        percent = float(read())
+    except Exception:
+        return 1.0
+    return max(1.0, min(2.25, percent / 100)) if percent else 1.0
+
+
+def windows_points(points, text_scale):
+    """Windows' interface text size with "Text size" applied once: Windows may already have
+    made its interface font bigger for it, or not, so the larger of the two is used."""
+    pt = points or WINDOWS_DEFAULT_PT
+    return max(pt, WINDOWS_DEFAULT_PT * (text_scale or 1.0))
+
+
+def text_points(points, factor=1.0, boost=READING_BOOST):
+    """These windows' text size in points: the desktop's (times its text scaling), a little
+    bigger for reading, kept between MIN_PT and MAX_PT."""
+    pt = (points or DEFAULT_PT) * (factor or 1.0) * boost
     return max(MIN_PT, min(MAX_PT, pt))
 
 

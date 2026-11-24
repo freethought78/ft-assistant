@@ -2,6 +2,7 @@
 
 Wayland isn't supported yet (it needs a different key-capture and typing method)."""
 
+import contextlib
 import ctypes
 import ctypes.util
 import functools
@@ -9,6 +10,7 @@ import logging
 import os
 import subprocess
 import threading
+import time
 
 from Xlib import X, XK, display
 from Xlib.ext import record
@@ -35,6 +37,40 @@ def session_problem():
 
 
 # ---------------------------------------------------------------- Assistant key
+
+# ---- "<word> undo": was anything typed or clicked since FT Assistant typed?
+# Only a count of the user's key presses and clicks, in memory: never which keys, never saved or
+# logged. FT Assistant's own typing (xdotool) isn't counted: it looks the same to X, so presses
+# are ignored while it types and for a moment after (SYNTH_GRACE).
+SYNTH_GRACE = 0.3
+SCROLL_BUTTONS = {4, 5, 6, 7}         # the wheel isn't a click
+_input = {"count": 0, "quiet_until": 0.0, "listening": False}
+
+
+def input_watch_ok():
+    """True while the listener records keys and buttons, so input_count() can be trusted."""
+    return _input["listening"]
+
+
+def input_count():
+    """How many keys and mouse buttons the user has pressed (not the Assistant key, not
+    FT Assistant's own typing) since FT Assistant started."""
+    return _input["count"]
+
+
+def _user_input():
+    if time.monotonic() >= _input["quiet_until"]:
+        _input["count"] += 1
+
+
+@contextlib.contextmanager
+def _synthesizing():
+    _input["quiet_until"] = float("inf")
+    try:
+        yield
+    finally:
+        _input["quiet_until"] = time.monotonic() + SYNTH_GRACE
+
 
 class TriggerListener:
     """Calls on_press/on_release when the Assistant key (keyboard key or extra mouse button)
@@ -86,10 +122,12 @@ class TriggerListener:
         is_key = self.trigger["type"] == "key"
         events = (X.KeyPress, X.KeyRelease) if is_key else (X.ButtonPress, X.ButtonRelease)
         want = self.keycode if is_key else self.trigger["button"]
+        # Every key and button (KeyPress..ButtonRelease): the Assistant key's, and the others
+        # only counted for "<word> undo" (input_count).
         ctx = rdpy.record_create_context(0, [record.AllClients], [{
             "core_requests": (0, 0), "core_replies": (0, 0),
             "ext_requests": (0, 0, 0, 0), "ext_replies": (0, 0, 0, 0),
-            "delivered_events": (0, 0), "device_events": events,
+            "delivered_events": (0, 0), "device_events": (X.KeyPress, X.ButtonRelease),
             "errors": (0, 0), "client_started": False, "client_died": False,
         }])
 
@@ -108,7 +146,12 @@ class TriggerListener:
             data = reply.data
             while data:
                 ev, data = rq.EventField(None).parse_binary_value(data, rdpy.display, None, None)
-                if ev.detail != want or self._ignore.is_set():
+                if ev.type not in events or ev.detail != want:
+                    if ev.type == X.KeyPress or (ev.type == X.ButtonPress
+                                                 and ev.detail not in SCROLL_BUTTONS):
+                        _user_input()
+                    continue
+                if self._ignore.is_set():
                     continue
                 if ev.type in (X.KeyPress, X.ButtonPress):
                     if pending["timer"] is not None:      # auto-repeat: still held
@@ -124,7 +167,11 @@ class TriggerListener:
                     t.start()
 
         self._ctx = ctx
-        rdpy.record_enable_context(ctx, callback)       # returns when stop() is called
+        _input["listening"] = True
+        try:
+            rdpy.record_enable_context(ctx, callback)   # returns when stop() is called
+        finally:
+            _input["listening"] = False
         rdpy.record_free_context(ctx)
         rdpy.close()
 
@@ -190,15 +237,25 @@ def caps_lock_off():
 # ---------------------------------------------------------------- typing and windows
 
 def type_text(text):
-    subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "4", "--", text])
+    with _synthesizing():
+        subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "4", "--", text])
 
 
 def press_enter():
-    subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"])
+    with _synthesizing():
+        subprocess.run(["xdotool", "key", "--clearmodifiers", "Return"])
 
 
 def press_escape():
-    subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"])
+    with _synthesizing():
+        subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"])
+
+
+def press_backspace(times):
+    """Backspace `times` times ("<word> undo")."""
+    with _synthesizing():
+        subprocess.run(["xdotool", "key", "--clearmodifiers", "--delay", "4",
+                        "--repeat", str(int(times)), "BackSpace"])
 
 
 def activate_window(wid):
@@ -315,6 +372,21 @@ def terminal_windows():
 
 def is_terminal_class(cls):
     return (cls or "").lower() in TERMINAL_CLASSES
+
+
+def processes_in(folder):
+    """Ids of the processes running in `folder` (to see that an agent started there, also when
+    its terminal opened it as a tab instead of a new window)."""
+    folder = os.path.realpath(folder)
+    out = set()
+    for name in os.listdir("/proc"):
+        if name.isdigit():
+            try:
+                if os.readlink(f"/proc/{name}/cwd") == folder:
+                    out.add(int(name))
+            except OSError:
+                pass
+    return out
 
 
 def window_title(wid):

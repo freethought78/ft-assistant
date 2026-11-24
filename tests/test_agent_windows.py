@@ -83,7 +83,8 @@ class AfterARestart(unittest.TestCase):
     def ask(self, a, title, focus=(1, "firefox", "Docs")):
         with mock.patch.object(app, "plat") as plat, \
                 mock.patch.object(app.config, "load", return_value=a.settings), \
-                mock.patch.object(app.harness, "open_session") as open_session, \
+                mock.patch.object(app.harness, "open_session",
+                                  return_value=(mock.Mock(key="claude"), None)) as open_session, \
                 mock.patch.object(app.threading, "Thread"):
             plat.is_terminal_class.side_effect = lambda c: c == "gnome-terminal-server"
             plat.terminal_windows.return_value = {9}
@@ -127,6 +128,70 @@ class AfterARestart(unittest.TestCase):
         plat, open_session = self.ask(a, "ft@MSI: ~")
         plat.type_text.assert_not_called()
         open_session.assert_called_once()
+
+
+
+@unittest.skipIf(app is None, "numpy isn't installed")
+class WindowDidntOpen(unittest.TestCase):
+    """After "Assistant, ..." opens a window: a notice only when nothing at all happened."""
+
+    def watch(self, windows_after=(), procs_after=(), still_running=False):
+        a = app.App.__new__(app.App)
+        a.agent_window, a.our_windows, a.titled = {}, set(), set()
+        a.window_file, a.login, a.windows_lock = None, None, app.threading.Lock()
+        proc = mock.Mock()
+        proc.poll.return_value = None if still_running else 0
+        with mock.patch.object(app, "plat") as plat, \
+                mock.patch.object(app, "OPENED_WINDOW_WAIT", 0.05), \
+                mock.patch.object(app, "TITLE_WAIT", 0), \
+                mock.patch.object(app.time, "sleep"), \
+                mock.patch.object(app.log, "error") as error:
+            plat.terminal_windows.return_value = {1} | set(windows_after)
+            plat.processes_in.return_value = {50} | set(procs_after)
+            a._remember_new_window("claude", {1}, ("/sessions", {50}, proc))
+        return plat, error
+
+    def test_nothing_happened_says_so(self):
+        plat, error = self.watch()
+        plat.notify.assert_called_once_with("Couldn't open Claude Code's window.")
+        error.assert_called_once()
+        self.assertNotIn("check the build", str(error.call_args))     # never the request
+
+    def test_a_new_window_is_fine(self):
+        plat, _ = self.watch(windows_after={2})
+        plat.notify.assert_not_called()
+
+    def test_a_new_tab_in_an_open_terminal_is_fine(self):
+        plat, _ = self.watch(procs_after={51})          # the agent runs in the sessions folder
+        plat.notify.assert_not_called()
+
+    def test_the_agent_still_running_is_fine(self):
+        plat, _ = self.watch(still_running=True)        # Windows: the agent is the process
+        plat.notify.assert_not_called()
+
+    def test_windows_without_process_info(self):
+        a = app.App
+        with mock.patch.object(app, "plat") as plat:
+            plat.processes_in.return_value = None
+            stopped, running = mock.Mock(), mock.Mock()
+            stopped.poll.return_value, running.poll.return_value = 1, None
+            self.assertFalse(a._agent_started("/s", None, stopped))
+            self.assertTrue(a._agent_started("/s", None, running))
+
+
+@unittest.skipIf(os.name == "nt", "Linux")
+class ProcessesInFolder(unittest.TestCase):
+    def test_sees_a_process_started_there(self):
+        import subprocess
+        from ft_assistant import platform_linux
+        with tempfile.TemporaryDirectory() as d:
+            before = platform_linux.processes_in(d)
+            p = subprocess.Popen(["sleep", "5"], cwd=d)
+            try:
+                self.assertEqual(platform_linux.processes_in(d) - before, {p.pid})
+            finally:
+                p.kill()
+                p.wait()
 
 
 if __name__ == "__main__":

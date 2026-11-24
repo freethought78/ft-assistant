@@ -354,7 +354,7 @@ tool's model was untouched.
    Claude Code, OpenCode's model provider for OpenCode), while normal dictation stays entirely on
    the computer.
 3. **Linux: X11 only for the first release.** Setup detects Wayland and explains it isn't
-   supported yet. Wayland can come later (it needs a different key-capture and typing method).
+   supported. Wayland is not planned (see "Wayland is not planned" under "Planned", 2026-11-23).
 4. **Windows testing happens in Bottles** (Wine), reusing the user's existing test bottle
    **`DannyRando-Test`** (Flatpak Bottles, win64, soda runner) instead of creating new ones.
    Never touch the user's other bottles (games and apps). Wine isn't real Windows, so some things can only
@@ -373,6 +373,22 @@ Documented only; no code yet. Sorted by branch (2026-11-21).
 3. The `conversation-management` branch is then made from `next`, so it has all of that,
    including the branch label and the switch for trying it as the live tool.
 4. It stays separate until the user says to merge it.
+
+**Keep it simple (the user, 2026-11-23):** FT Assistant is a one-button way to use the computer,
+with little to read and nothing to set up. A new feature is only worth it if it adds no
+complexity. Rules for every plan below:
+- **No new settings:** it works with no setting, and nothing new goes on the setup screen.
+- **Explanations are one sentence each,** in the voice commands window.
+- **At most about 7 voice commands,** ever.
+- **Something the user only notices when they need it** (a notice when something fails) is
+  better than something they have to learn.
+
+**Reviewed 2026-11-23:** the feature set is about right. Added: a notice when the assistant
+window doesn't open, and "<word> undo". Dropped: the "possibly related note" hint (part 3 of
+conversation management).
+
+**Wayland is not planned (the user, 2026-11-23):** don't suggest Wayland support; the user will
+bring it up if they ever want it. Linux stays X11 only.
 
 ## On `next`
 
@@ -812,11 +828,11 @@ simple and easy to use out of the box is one of the project's main goals.
 | "<word> help" | Opens the voice commands window | new |
 | "<word> new topic" (optionally followed by a request) | Starts a fresh conversation, then sends the request if there is one | new, conversation-management branch |
 | "<word> stop" | Interrupts the assistant's current work (presses Escape in its window) | new |
+| "<word> undo" | Removes the dictation just typed, if nothing was typed or clicked since (added 2026-11-23) | new |
 
 **Candidates held back** (not approved; weigh against the 7-command limit before adding any):
-- **"<word> scratch that":** deletes the last dictation that FT Assistant typed (it knows how many
-  characters it typed). Useful for dictating, but risky if the focus has changed since. It would
-  only act when the same window still has focus.
+- **"<word> scratch that":** approved 2026-11-23 as **"<word> undo"** (see its own plan under
+  `next`).
 - **"<word> remember this":** asks the agent to write a topic note now (conversation-management
   topic notes). It may not be needed if the agent writes notes by itself.
 - **"<word> continue":** forces continuing the old conversation after a quiet gap. It clashes with
@@ -1002,6 +1018,99 @@ updates, run-branch.sh) can then find it and close it if needed.
   - **Not yet:** a real update with an open Claude Code window. Windows: whether Claude Code sets
     the console title there (if not, a restart opens a new window as before).
 
+### Setup screen: less on it; explanations go to the voice commands window (added and built 2026-11-23)
+
+**The user's direction (2026-11-23):** the setup screen should get shorter, not keep growing. New
+features don't add settings or explanations to it. Descriptions go into the window that lists the
+voice commands (opened by "<word> help" or the "Voice commands..." button).
+
+**Built as proposed (the user approved it, 2026-11-23):**
+- **Moves to the voice commands window**, as short notes under the list:
+  - the privacy note (normal dictation stays on this computer; requests go to the assistant's
+    online service);
+  - "Say "<word>, ..." and a request..." under the command word;
+  - "To open this screen again, hold <key> and say "<word> setup"" (the list already has it).
+- **Shown only while choosing a key:** "Good choices" and "Best avoided" appear after "Change
+  key" is pressed, and go away once a key is chosen.
+- **Stays on the setup screen:** the assistant choice with Install..., the Assistant key, the
+  command word (with its error or warning, when there is one), "Voice commands...", updates and
+  uninstall, the version, Save and Cancel.
+- **The voice commands window** keeps its short list (at most about 7 commands) and gets a "Good
+  to know" part under it for these notes. Each note is one sentence (a test checks it).
+- **Under the command word,** a line appears only for a problem with the word, or for the "try it
+  a few times" tip once it's changed. The key and word messages take no space when empty.
+
+**Text a little bigger, for poor eyesight (the user's request, 2026-11-23):**
+- **A reading boost:** both windows' text is 20 % bigger than the desktop's normal text
+  (`look.READING_BOOST`). On the user's desktop (Ubuntu 10): 12 pt.
+- **Large-text settings are honoured further:** the limit went from 18 to 28 points, so a desktop
+  set to large text isn't cut back.
+- **Windows' "Text size" setting** (Settings > Accessibility) is followed, besides display
+  scaling: `HKCU\Software\Microsoft\Accessibility\TextScaleFactor`. Windows may already have
+  enlarged its interface font for it, so the larger of the two is used, never both.
+- **Considered and set aside:** sizing by a share of the screen (unpredictable: huge on big
+  monitors) and Ctrl +/- zoom (hidden, so those who need it wouldn't find it).
+- **Small screens** still work as before: the text shrinks to at most 85 % before scrolling.
+- **Not yet checked on a real Windows PC** (the bottle has no Text size setting).
+
+### A notice when the assistant window doesn't open (added and built 2026-11-23)
+
+- **The problem:** when the agent's window failed to open (the 0.3.0 bug, fixed in 0.3.1),
+  nothing happened and nothing said why.
+- **Now:** after "<word>, ..." opens a window, FT Assistant watches for it as before
+  (`OPENED_WINDOW_WAIT`, 8 s). If nothing started, it shows "Couldn't open Claude Code's window."
+  (or OpenCode's) and writes one error line to the log, with the assistant's name only, never
+  the request.
+- **"Nothing started" means all three** (`App._agent_started`), so there are no false alarms:
+  - no new terminal window;
+  - no new process in the sessions folder (Linux, `processes_in`): some terminals open the
+    agent as a tab in a window that's already open;
+  - the started process has exited (Windows: it's the agent itself; xterm and the like: the
+    terminal, which stays running).
+- **No setting, nothing to read:** the user only sees it when something is broken.
+- **Tested 2026-11-23:** unit tests (nothing started; a new window; a new tab; still running;
+  Windows without process info), and on Linux with throwaway terminals: the 0.3.0 bug recreated
+  showed the notice; a normal launch didn't.
+- **Not yet on a real Windows PC.**
+
+### "<word> undo": remove what was just typed (added and built 2026-11-23)
+
+- **What it does:** removes the dictation FT Assistant typed last, for when Whisper mishears. It
+  was the "scratch that" candidate from the voice commands plan, under a shorter name. It works
+  in "Dictation only" too.
+- **Only when it's safe:** the same window still has focus, and the user hasn't pressed a key
+  or clicked since (the wheel doesn't count). Otherwise nothing is deleted and a notice says
+  why ("Nothing to undo." / "Nothing was undone: you've typed or clicked since."). It undoes
+  once; any other voice command in between also cancels it.
+- **Not in an assistant's window after "<word>, ...":** only plain dictation can be undone;
+  a request has already been sent with Enter.
+- **What's kept, in memory only:** the window, the length of the last dictation (never its
+  text) and a count of the user's key presses and clicks (`plat.input_count()`, never which
+  keys). Nothing is saved or logged.
+- **How presses and clicks are counted:**
+  - Linux: the Assistant key's XRecord listener now records every key and button. FT
+    Assistant's own typing (xdotool) looks like the user's to X, so presses are ignored while
+    it types and for 0.3 s after (`SYNTH_GRACE`).
+  - Windows: both low-level hooks (keyboard and mouse) are installed; the one that isn't for
+    the Assistant key only counts and never swallows anything. Injected input (FT Assistant's
+    own typing) is ignored by its flag.
+- **Removing:** Backspace as many times as characters were typed (`press_backspace`).
+- **The voice commands list** has 6 commands now (still under 7).
+- **Tested 2026-11-23:** unit tests (undo right after; not after a press or click; not in another
+  window; only once; not after another command; nothing typed yet; only the length kept), and
+  on Linux in a throwaway text window: FT Assistant's own typing and Backspace weren't counted,
+  a key press after them was, and undo removed exactly the last dictation.
+- **Never deletes on a guess** (`plat.input_watch_ok()`, checked right before deleting):
+  - Windows silently removes a low-level hook that answers too slowly; the count would then
+    stop changing. So both hooks are asked first: a key-up of an unused key (0x88) and a zero
+    wheel turn, marked with `PROBE_MARK` in `dwExtraInfo`, which only FT Assistant's hooks
+    recognize and swallow (no program gets them). If either doesn't answer within 0.5 s,
+    nothing is deleted ("FT Assistant couldn't check for typing or clicks").
+  - Linux: only while the XRecord listener runs.
+- **Tested live on Linux 2026-11-23** (by the user): undo removed the dictation. The Linux
+  listener check was tested with a real listener.
+- **Not yet on a real Windows PC:** the counting hooks and the check above.
+
 ## On the `conversation-management` branch
 
 Built after the work on `next`, on a branch made from `next`; never merged until the user says so.
@@ -1080,15 +1189,15 @@ recommended:
      - Indirect connections, if an index line is worded too narrowly.
      - Work that never got a note.
      - Remedy: the user says "check your notes" or "look at earlier conversations".
-3. **Optional: a hint from FT Assistant, at no AI cost.**
+3. **Dropped 2026-11-23 (keep it simple): a hint from FT Assistant, at no AI cost.** The agent
+   already has the notes index in its context, so this would add code for little gain.
    - Before handing over the request, compare its words with the index titles.
    - On an obvious overlap, append "(possibly related note: <title>)".
    - A plain word match in memory; nothing is logged or stored.
 
 **Privacy:** topic notes are a new store of what the user asks about (written by the agent in the
-sessions folder, not FT Assistant's log). It must be clearly explained, opt-in on the setup screen
-("Keep topic notes"), and in one folder the user can see, edit and delete. Off by default for new
-users is the safe choice (to confirm with the user). The gap rule (1) stores nothing new.
+sessions folder, not FT Assistant's log). It must be clearly explained and kept in one folder the
+user can see, edit and delete. The user chose on by default (2026-11-23, see below). The gap rule (1) stores nothing new.
 
 **Testing:**
 - Only with a throwaway sessions folder, never the user's real `~/FT Assistant sessions` or its
@@ -1096,12 +1205,26 @@ users is the safe choice (to confirm with the user). The gap rule (1) stores not
   `FT_ASSISTANT_CONFIG_DIR`).
 - Tested on Linux with both harnesses, then in the Windows test bottle.
 
-**Open questions for the user:**
-- Default gap length.
-- New window vs `/clear` / `/new` in the open one.
-- Whether the gap rule is needed at all once "<word> new topic" exists (or off by default).
-- Topic notes on or off by default.
-- Whether to ship the gap rule first on its own.
+**Decided by the user (2026-11-23):**
+- **It works out of the box:** the quiet gap and topic notes are on by default.
+- **No new settings on the setup screen.** How these work is explained in the voice commands
+  window instead (see "Setup screen: less on it" under `next`). This replaces the setup-screen
+  choices above (Off / 15 / 30 / 60 minutes, "Keep topic notes").
+
+**Proposed defaults (the user didn't pick these; change if they say so):**
+- **Gap: 15 minutes, fixed.** Kept in `settings.json` for testing, with no control on the setup
+  screen.
+- **If the old window is still open:** the new conversation starts in it (`/clear` for Claude
+  Code, `/new` for OpenCode), so there's still one assistant window. The old conversation stays
+  saved.
+- **Release order:** "<word> new topic" and the quiet gap first (they store nothing new), topic
+  notes in a later release.
+
+**Still open:**
+- **Turning topic notes off** without a setup-screen setting: deleting the notes folder, a
+  voice command, or only `settings.json`.
+- **The privacy explanation for topic notes,** since they're on by default: it goes in the voice
+  commands window and the release notes. Existing users get a notice when they update.
 
 ## Open questions
 

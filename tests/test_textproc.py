@@ -67,6 +67,14 @@ class ParseCommand(unittest.TestCase):
         self.assertEqual(parse_command("Assistant, help me write a test."),
                          Command("assistant", "help me write a test."))
 
+    def test_undo(self):
+        for s in ("Assistant undo", "Assistant, undo.", "assistant Undo!"):
+            self.assertEqual(parse_command(s), Command("undo"), s)
+        self.assertEqual(parse_command("Assistant, undo the last commit."),
+                         Command("assistant", "undo the last commit."))
+        # It works without an assistant too ("Dictation only").
+        self.assertEqual(route("Assistant undo", dictation_only=True), Command("undo"))
+
 
 class DictationOnly(unittest.TestCase):
     def test_keyword_is_plain_text_in_dictation_only(self):
@@ -113,12 +121,12 @@ class CommandWord(unittest.TestCase):
 
 class Hotwords(unittest.TestCase):
     def test_keyword_hints_always_first(self):
-        hints = "Assistant, Assistant setup, Assistant help, Assistant stop"
+        hints = "Assistant, Assistant setup, Assistant help, Assistant stop, Assistant undo"
         self.assertEqual(build_hotwords([]), hints)
         self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
                          hints + ", Discord, Claude")
         self.assertEqual(build_hotwords(["Claude"], "Jarvis"),
-                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Claude")
+                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Jarvis undo, Claude")
 
 
 if __name__ == "__main__":
