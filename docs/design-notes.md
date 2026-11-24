@@ -92,6 +92,17 @@ Last updated: 2026-11-17 (full review and cleanup)
 
   Tested live on the user's machine with `run-branch.sh next` (request sent to the open Claude
   Code window after a restart). The Windows tester's open report from 0.3.0 is unchanged.
+- **v0.4.0** (2026-11-23): the "keep it simple" work on `next` (see "Planned" below):
+  - a shorter setup screen; its explanations moved to "Good to know" in the voice commands
+    window;
+  - text 20 % bigger in both windows, large-text settings honoured up to 28 pt, and Windows'
+    "Text size" setting followed;
+  - a notice when the assistant window doesn't open;
+  - "Assistant undo", with a check that deletes nothing unless key and click watching is
+    confirmed.
+
+  Tested live on Linux. Not tested on Windows where the bottle couldn't (the user's decision,
+  2026-11-23: skip those Windows checks for now and push ahead).
 
 ## Carried over from the current tool (unchanged)
 
