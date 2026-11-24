@@ -144,6 +144,17 @@ class Undo(unittest.TestCase):
         plat.press_backspace.assert_not_called()
         plat.notify.assert_called_once()
 
+    def test_not_when_typing_and_clicks_cant_be_checked(self):
+        # Windows: a hook dropped by Windows (or no listener): never delete on a guess.
+        a = app.App.__new__(app.App)
+        a.last_typed = (5, 13, 3)
+        with mock.patch.object(app, "plat") as plat:
+            plat.input_count.return_value = 3
+            plat.input_watch_ok.return_value = False
+            a.undo((5, "gedit", "Notes"))
+        plat.press_backspace.assert_not_called()
+        plat.notify.assert_called_once()
+
     def test_not_in_another_window(self):
         plat = self.run_app([("Hello there.", None),
                              ("Assistant undo", (6, "firefox", "Docs"))], presses=(3, 3))
@@ -177,6 +188,18 @@ class Undo(unittest.TestCase):
             engine.transcribe.return_value = "Secret words."
             a.process(self.audio(), (5, "gedit", "Notes"))
         self.assertNotIn("Secret", repr(a.last_typed))
+
+
+
+class InputWatch(unittest.TestCase):
+    def test_windows_without_running_hooks_says_no(self):
+        from ft_assistant import platform_windows
+        self.assertFalse(platform_windows.input_watch_ok())     # sends nothing when not listening
+
+    @unittest.skipIf(__import__("os").name == "nt", "Linux")
+    def test_linux_only_while_listening(self):
+        from ft_assistant import platform_linux
+        self.assertFalse(platform_linux.input_watch_ok())
 
 
 if __name__ == "__main__":

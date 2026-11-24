@@ -173,6 +173,9 @@ class App:
         if focus[0] != wid or plat.input_count() != count:
             plat.notify("Nothing was undone: you've typed or clicked since.")
             return
+        if not plat.input_watch_ok():     # can't tell whether anything was typed: delete nothing
+            plat.notify("Nothing was undone: FT Assistant couldn't check for typing or clicks.")
+            return
         plat.press_backspace(length)
         log.debug("undid the last dictation")
 

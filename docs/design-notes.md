@@ -1100,8 +1100,16 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
   window; only once; not after another command; nothing typed yet; only the length kept), and
   on Linux in a throwaway text window: FT Assistant's own typing and Backspace weren't counted,
   a key press after them was, and undo removed exactly the last dictation.
-- **Not yet:** a live dictation test, and a real Windows PC (the second hook; if Windows ever
-  dropped it, counting would stop, so this needs a check there).
+- **Never deletes on a guess** (`plat.input_watch_ok()`, checked right before deleting):
+  - Windows silently removes a low-level hook that answers too slowly; the count would then
+    stop changing. So both hooks are asked first: a key-up of an unused key (0x88) and a zero
+    wheel turn, marked with `PROBE_MARK` in `dwExtraInfo`, which only FT Assistant's hooks
+    recognize and swallow (no program gets them). If either doesn't answer within 0.5 s,
+    nothing is deleted ("FT Assistant couldn't check for typing or clicks").
+  - Linux: only while the XRecord listener runs.
+- **Tested live on Linux 2026-11-23** (by the user): undo removed the dictation. The Linux
+  listener check was tested with a real listener.
+- **Not yet on a real Windows PC:** the counting hooks and the check above.
 
 ## On the `conversation-management` branch
 

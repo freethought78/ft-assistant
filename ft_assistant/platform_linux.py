@@ -44,7 +44,12 @@ def session_problem():
 # are ignored while it types and for a moment after (SYNTH_GRACE).
 SYNTH_GRACE = 0.3
 SCROLL_BUTTONS = {4, 5, 6, 7}         # the wheel isn't a click
-_input = {"count": 0, "quiet_until": 0.0}
+_input = {"count": 0, "quiet_until": 0.0, "listening": False}
+
+
+def input_watch_ok():
+    """True while the listener records keys and buttons, so input_count() can be trusted."""
+    return _input["listening"]
 
 
 def input_count():
@@ -162,7 +167,11 @@ class TriggerListener:
                     t.start()
 
         self._ctx = ctx
-        rdpy.record_enable_context(ctx, callback)       # returns when stop() is called
+        _input["listening"] = True
+        try:
+            rdpy.record_enable_context(ctx, callback)   # returns when stop() is called
+        finally:
+            _input["listening"] = False
         rdpy.record_free_context(ctx)
         rdpy.close()
 

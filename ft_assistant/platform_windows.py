@@ -116,6 +116,14 @@ def session_problem():
 # which keys, never saved or logged). FT Assistant's own typing is injected, so it isn't counted.
 CLICKS = (WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN)
 _input = {"count": 0}
+# Windows silently removes a low-level hook that answers too slowly, and then the count would
+# stop changing. So before an undo, both hooks are asked whether they still run: a key-up of an
+# unused key and a zero wheel turn, marked with PROBE_MARK, which only our hooks recognize and
+# swallow (no program ever gets them).
+PROBE_MARK = 0x46544153          # "FTAS"
+PROBE_KEY = 0x88                 # an unassigned virtual key
+HOOK_CHECK_WAIT = 0.5            # seconds
+_probe = {"key": threading.Event(), "mouse": threading.Event(), "listening": False}
 
 
 def input_count():
@@ -154,6 +162,9 @@ class TriggerListener:
         def on_key(code, wparam, lparam):
             if code == 0:
                 k = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                if k.dwExtraInfo == PROBE_MARK:                   # input_watch_ok()
+                    _probe["key"].set()
+                    return 1
                 if (wparam in (WM_KEYDOWN, WM_SYSKEYDOWN) and not k.flags & LLKHF_INJECTED
                         and k.vkCode != want_vk):
                     _input["count"] += 1                      # for "<word> undo"
@@ -170,6 +181,10 @@ class TriggerListener:
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
         def on_mouse(code, wparam, lparam):
+            if code == 0 and ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents \
+                    .dwExtraInfo == PROBE_MARK:                   # input_watch_ok()
+                _probe["mouse"].set()
+                return 1
             if code == 0 and wparam in CLICKS:
                 m = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 if not m.flags & LLMHF_INJECTED and not (
@@ -196,7 +211,9 @@ class TriggerListener:
         if not hooks[0 if is_key else 1]:
             raise RuntimeError("couldn't watch the Assistant key (SetWindowsHookEx failed)")
         self._thread_id = kernel32.GetCurrentThreadId()
+        _probe["listening"] = all(hooks)
         _message_loop()                                  # returns when stop() is called
+        _probe["listening"] = False
         for hook in hooks:
             if hook:
                 user32.UnhookWindowsHookEx(hook)
@@ -343,6 +360,24 @@ def press_enter():
 
 def press_escape():
     _send([(0x1B, 0, 0), (0x1B, 0, KEYEVENTF_KEYUP)])
+
+
+INPUT_MOUSE, MOUSEEVENTF_WHEEL = 0, 0x0800
+
+
+def input_watch_ok(wait=HOOK_CHECK_WAIT):
+    """True if both hooks still run, so input_count() can be trusted ("<word> undo")."""
+    if not _probe["listening"]:
+        return False
+    for e in ("key", "mouse"):
+        _probe[e].clear()
+    arr = (INPUT * 2)()
+    arr[0].type = INPUT_KEYBOARD
+    arr[0].u.ki = KEYBDINPUT(PROBE_KEY, 0, KEYEVENTF_KEYUP, 0, PROBE_MARK)
+    arr[1].type = INPUT_MOUSE
+    arr[1].u.mi = MOUSEINPUT(0, 0, 0, MOUSEEVENTF_WHEEL, 0, PROBE_MARK)
+    user32.SendInput(2, arr, ctypes.sizeof(INPUT))
+    return _probe["key"].wait(wait) and _probe["mouse"].wait(wait)
 
 
 def press_backspace(times):
