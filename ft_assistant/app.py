@@ -168,17 +168,15 @@ class App:
     def undo(self, focus):
         """ "<word> undo": Backspace over the last dictation, only if it's surely still the last
         thing in that window: the same window has focus and the user hasn't typed or clicked
-        since. Otherwise nothing is deleted."""
+        since. Otherwise nothing is deleted, silently: the text still being there says so (no
+        notifications for commands that did nothing, the user's decision, 2026-11-24)."""
         last, self.last_typed = self.last_typed, None
         if last is None:
-            plat.notify("Nothing to undo.")
             return
         wid, length, count = last
         if focus[0] != wid or plat.input_count() != count:
-            plat.notify("Nothing was undone: you've typed or clicked since.")
             return
         if not plat.input_watch_ok():     # can't tell whether anything was typed: delete nothing
-            plat.notify("Nothing was undone: FT Assistant couldn't check for typing or clicks.")
             return
         plat.press_backspace(length)
         log.debug("undid the last dictation")
@@ -332,8 +330,7 @@ class App:
             key = self.settings.harness
             wid = self.agent_window_for(key)
             if wid is None or not plat.activate_window(wid):
-                plat.notify("No assistant window is open to stop.")
-                return
+                return                       # nothing to stop (no notification, see undo())
         for i in range(self.STOP_PRESSES.get(key, 1)):
             if i:
                 time.sleep(0.3)

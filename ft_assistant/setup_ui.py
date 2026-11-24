@@ -26,6 +26,9 @@ INSTALL_WATCH_SECONDS = 30 * 60   # how long the screen watches for an install t
 
 # Keep this screen short (the user's decision, 2026-11-23): explanations go to the voice commands
 # window ("Good to know"), not here, and new features don't add settings to it.
+# The manual is the README on GitHub (the user's decision, 2026-11-24): kept up to date with every
+# release, and not shipped as a file users would have to find.
+MANUAL_URL = f"https://github.com/{updater.GITHUB_REPO}#readme"
 WORD_TRY_TIP = ("After saving, try it a few times: some words are easier for the speech engine "
                 "to catch than others.")
 
@@ -287,8 +290,8 @@ class SetupWindow:
         self.word_var.trace_add("write", lambda *a: self._refresh())
 
         # ---- updates / uninstall
-        ttk.Label(f, text="Updates and uninstall", style="Head.TLabel").grid(row=r, sticky="w",
-                                                                             pady=(gap, 0))
+        ttk.Label(f, text="Help and updates", style="Head.TLabel").grid(row=r, sticky="w",
+                                                                        pady=(gap, 0))
         r += 1
         urow = ttk.Frame(f)
         urow.grid(row=r, sticky="w", pady=(2, 2))
@@ -297,13 +300,15 @@ class SetupWindow:
         self.uninstall_btn = ttk.Button(urow, text="Uninstall...", command=self._uninstall,
                                         state="normal" if installed_dir() else "disabled")
         self.uninstall_btn.grid(row=0, column=1, padx=8)
+        ttk.Button(urow, text="Manual", command=self._open_manual).grid(row=0, column=2,
+                                                                        padx=(0, 8))
         if buildinfo.is_test_build():
             # A test build from a branch: on its own line, so it stands out and fits.
             r += 1
             self._wrapping(ttk.Label(f, text=f"Version {buildinfo.describe()}",
                                      style="Warn.TLabel")).grid(row=r, sticky="w", pady=(4, 0))
         else:
-            ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=2)
+            ttk.Label(urow, text=f"Version {__version__}", style="Note.TLabel").grid(row=0, column=3)
         r += 1
         self.update_msg = self._wrapping(ttk.Label(f, style="Note.TLabel"))
         self.update_msg.grid(row=r, sticky="w", pady=(4, 2))
@@ -338,6 +343,13 @@ class SetupWindow:
         root.update_idletasks()
         self._fit()
         root.deiconify()
+
+    def _open_manual(self):
+        """The full manual: the README on GitHub, in the web browser."""
+        try:
+            webbrowser.open(MANUAL_URL)
+        except Exception as e:
+            messagebox.showinfo("Manual", f"The manual is at {MANUAL_URL} ({e}).", parent=self.root)
 
     def _show_commands(self):
         """The voice commands window, with the command word and key as currently set here."""

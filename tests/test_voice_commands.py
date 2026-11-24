@@ -99,7 +99,7 @@ class Stop(unittest.TestCase):
         plat.activate_window.assert_called_once_with(7)
         self.assertEqual(plat.press_escape.call_count, 2)
 
-    def test_stop_with_no_assistant_window_just_says_so(self):
+    def test_stop_with_no_assistant_window_does_nothing(self):
         a = self.make_app()
         with mock.patch.object(app, "plat") as plat, \
                 mock.patch.object(app.config, "load", return_value=a.settings):
@@ -107,7 +107,7 @@ class Stop(unittest.TestCase):
             plat.terminal_windows.return_value = set()
             a.stop_assistant((1, "firefox", "Docs"))
         plat.press_escape.assert_not_called()
-        plat.notify.assert_called_once()
+        plat.notify.assert_not_called()
 
     def test_help_opens_one_window(self):
         a = self.make_app()
@@ -148,7 +148,7 @@ class Undo(unittest.TestCase):
     def test_not_after_typing_or_clicking(self):
         plat = self.run_app([("Hello there.", None), ("Assistant undo", None)], presses=(3, 4))
         plat.press_backspace.assert_not_called()
-        plat.notify.assert_called_once()
+        plat.notify.assert_not_called()
 
     def test_not_when_typing_and_clicks_cant_be_checked(self):
         # Windows: a hook dropped by Windows (or no listener): never delete on a guess.
@@ -159,7 +159,7 @@ class Undo(unittest.TestCase):
             plat.input_watch_ok.return_value = False
             a.undo((5, "gedit", "Notes"))
         plat.press_backspace.assert_not_called()
-        plat.notify.assert_called_once()
+        plat.notify.assert_not_called()          # silent: the text still being there says so
 
     def test_not_in_another_window(self):
         plat = self.run_app([("Hello there.", None),
@@ -170,7 +170,7 @@ class Undo(unittest.TestCase):
         plat = self.run_app([("Hello there.", None), ("Assistant undo", None),
                              ("Assistant undo", None)], presses=(3, 3))
         plat.press_backspace.assert_called_once()
-        plat.notify.assert_called_once_with("Nothing to undo.")
+        plat.notify.assert_not_called()
 
     def test_not_after_another_command(self):
         # "Assistant help" in between: the dictation is no longer the last thing done.
@@ -182,7 +182,7 @@ class Undo(unittest.TestCase):
     def test_nothing_typed_yet(self):
         plat = self.run_app([("Assistant undo", None)])
         plat.press_backspace.assert_not_called()
-        plat.notify.assert_called_once_with("Nothing to undo.")
+        plat.notify.assert_not_called()
 
     def test_only_the_length_is_kept(self):
         a = app.App.__new__(app.App)

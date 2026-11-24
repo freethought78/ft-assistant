@@ -1122,7 +1122,34 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
   listener check was tested with a real listener.
 - **Not yet on a real Windows PC:** the counting hooks and the check above.
 
+### Fewer notifications (the user's decision, 2026-11-24)
+
+- **Desktop notifications only for problems and updates,** never for normal use or for a voice
+  command that simply did nothing: they pop up while the user is doing other things.
+- **Silenced:** "Nothing to undo.", "Nothing was undone: ..." (twice) and "No assistant window is
+  open to stop." The screen already shows that nothing happened.
+- **Kept:** update available; microphone error; a failed dictation ("Error: ..."); FT Assistant
+  can't start; "Couldn't open ...'s window"; the graphics card fallback; "No assistant chosen
+  yet".
+- **Declined:** a notice when the quiet gap starts a new conversation.
+- **`tests/test_notification_policy.py`** lists the allowed notifications; a new one fails the
+  test until it's added there on purpose.
+
+### The README is the manual (the user's decision, 2026-11-24)
+
+- **README.md on GitHub is the complete user manual,** kept up to date with every release, and
+  not shipped as a file. The setup screen's **Manual** button (under "Help and updates", with
+  Check for updates and Uninstall) opens it.
+- **What FT Assistant is for** is stated there: dictation and one-off requests to the assistant;
+  bigger, multi-session projects belong in the assistant's full desktop app or terminal, in the
+  project's own folder (as the user works).
+- **Kept current:** a release step in CLAUDE.md, and `tests/test_manual.py` (every voice command,
+  and every setting without a setup-screen control, must be in the README).
+
 ## On the `conversation-management` branch
+
+**Merged into `next` on 2026-11-24** (the user's go-ahead), with "<word> new topic" and the quiet
+gap; conversation notes were dropped first.
 
 Built after the work on `next`, on a branch made from `next`; never merged until the user says so.
 
