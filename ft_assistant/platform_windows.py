@@ -366,6 +366,11 @@ def is_terminal_class(cls):
     return (cls or "").lower() in TERMINAL_CLASSES
 
 
+def processes_in(folder):
+    """Not known on Windows (None): there the agent itself is the started process."""
+    return None
+
+
 def window_title(hwnd):
     """The window's current title ("" if it's gone)."""
     return window_info(hwnd)[1]

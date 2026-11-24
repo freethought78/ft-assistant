@@ -205,11 +205,14 @@ class App:
             log.debug("sent to the open %s window", key)
             return
         before = plat.terminal_windows()
-        h = harness.open_session(key, text)
+        folder = config.sessions_dir()
+        running = plat.processes_in(folder) if folder.is_dir() else set()
+        h, proc = harness.open_session(key, text)
         log.debug("opened %s window", h.key)
-        threading.Thread(target=self._remember_new_window, args=(key, before), daemon=True).start()
+        threading.Thread(target=self._remember_new_window,
+                         args=(key, before, (folder, running, proc)), daemon=True).start()
 
-    def _remember_new_window(self, key, before):
+    def _remember_new_window(self, key, before, started=None):
         end = time.time() + OPENED_WINDOW_WAIT
         while time.time() < end:
             time.sleep(0.3)
@@ -224,6 +227,20 @@ class App:
                     agent_windows.save(self.window_file, self.login, dict(self.agent_window))
                 self._watch_title(wid, key)
                 return
+        if started and not self._agent_started(*started):
+            # Nothing happened (the 0.3.0 bug did this): say so instead of staying silent.
+            log.error("the %s window didn't open", key)
+            plat.notify(f"Couldn't open {harness.HARNESSES[key].name}'s window.")
+
+    @staticmethod
+    def _agent_started(folder, running_before, proc):
+        """No new window appeared: did the agent start anyway (in a new tab of an open terminal
+        window, say)? A new process in the sessions folder (Linux), or the started process still
+        running (Windows: the agent itself; xterm and the like: the terminal)."""
+        now = plat.processes_in(folder)
+        if now is not None and running_before is not None and now - running_before:
+            return True
+        return proc is not None and proc.poll() is None
 
     def _watch_title(self, wid, key):
         """Note when the new window shows its assistant's title (see self.titled)."""

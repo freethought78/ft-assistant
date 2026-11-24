@@ -193,7 +193,8 @@ def new_window_kwargs(cmd):
 
 def open_session(harness_key, prompt, launcher=subprocess.Popen):
     """Open a visible terminal window with the chosen harness in the neutral folder,
-    continuing the last conversation there (one ongoing conversation, no build-up)."""
+    continuing the last conversation there (one ongoing conversation, no build-up).
+    Returns (harness, the started process: the terminal program, or on Windows the agent)."""
     h = HARNESSES[harness_key]
     exe = find_exe(h)
     if not exe:
@@ -205,8 +206,8 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
     argv[0] = exe              # the full path: the terminal may not find it on its own
     cmd = terminal_command(argv, folder)
     env = with_dir_on_path(clean_env(), Path(exe).parent)
-    launcher(cmd, cwd=str(folder), env=env, **std_handles(), **new_window_kwargs(cmd))
-    return h
+    proc = launcher(cmd, cwd=str(folder), env=env, **std_handles(), **new_window_kwargs(cmd))
+    return h, proc
 
 
 def std_handles(windows=sys.platform == "win32"):

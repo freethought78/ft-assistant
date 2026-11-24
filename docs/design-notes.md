@@ -1052,16 +1052,25 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
 - **Small screens** still work as before: the text shrinks to at most 85 % before scrolling.
 - **Not yet checked on a real Windows PC** (the bottle has no Text size setting).
 
-### A notice when the assistant window doesn't open (added 2026-11-23, not started)
+### A notice when the assistant window doesn't open (added and built 2026-11-23)
 
 - **The problem:** when the agent's window failed to open (the 0.3.0 bug, fixed in 0.3.1),
   nothing happened and nothing said why.
-- **Proposed:** after "<word>, ..." opens a window, FT Assistant already watches for it
-  (`OPENED_WINDOW_WAIT`, 8 s). If none appears, it shows a notice: "Couldn't open Claude Code's
-  window." It also writes one error line to the log (no text of the request).
+- **Now:** after "<word>, ..." opens a window, FT Assistant watches for it as before
+  (`OPENED_WINDOW_WAIT`, 8 s). If nothing started, it shows "Couldn't open Claude Code's window."
+  (or OpenCode's) and writes one error line to the log, with the assistant's name only, never
+  the request.
+- **"Nothing started" means all three** (`App._agent_started`), so there are no false alarms:
+  - no new terminal window;
+  - no new process in the sessions folder (Linux, `processes_in`): some terminals open the
+    agent as a tab in a window that's already open;
+  - the started process has exited (Windows: it's the agent itself; xterm and the like: the
+    terminal, which stays running).
 - **No setting, nothing to read:** the user only sees it when something is broken.
-- **To check first:** whether 8 s is enough on a slow computer, and on Windows, whether
-  `terminal_windows` sees Windows Terminal's window.
+- **Tested 2026-11-23:** unit tests (nothing started; a new window; a new tab; still running;
+  Windows without process info), and on Linux with throwaway terminals: the 0.3.0 bug recreated
+  showed the notice; a normal launch didn't.
+- **Not yet on a real Windows PC.**
 
 ### "<word> undo": remove what was just typed (added 2026-11-23, not started)
 

@@ -317,6 +317,21 @@ def is_terminal_class(cls):
     return (cls or "").lower() in TERMINAL_CLASSES
 
 
+def processes_in(folder):
+    """Ids of the processes running in `folder` (to see that an agent started there, also when
+    its terminal opened it as a tab instead of a new window)."""
+    folder = os.path.realpath(folder)
+    out = set()
+    for name in os.listdir("/proc"):
+        if name.isdigit():
+            try:
+                if os.readlink(f"/proc/{name}/cwd") == folder:
+                    out.add(int(name))
+            except OSError:
+                pass
+    return out
+
+
 def window_title(wid):
     """The window's current title ("" if it's gone)."""
     global _wdpy
