@@ -112,6 +112,18 @@ def session_problem():
 
 # ---------------------------------------------------------------- Assistant key
 
+# "<word> undo": a count of the user's key presses and clicks since start (in memory only; never
+# which keys, never saved or logged). FT Assistant's own typing is injected, so it isn't counted.
+CLICKS = (WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_MBUTTONDOWN, WM_XBUTTONDOWN)
+_input = {"count": 0}
+
+
+def input_count():
+    """How many keys and mouse buttons the user has pressed (not the Assistant key, not
+    FT Assistant's own typing) since FT Assistant started."""
+    return _input["count"]
+
+
 class TriggerListener:
     """Calls on_press/on_release when the Assistant key goes down/up. The key (or side button)
     is swallowed, so it never reaches other programs and Caps Lock never toggles."""
@@ -142,6 +154,9 @@ class TriggerListener:
         def on_key(code, wparam, lparam):
             if code == 0:
                 k = ctypes.cast(lparam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                if (wparam in (WM_KEYDOWN, WM_SYSKEYDOWN) and not k.flags & LLKHF_INJECTED
+                        and k.vkCode != want_vk):
+                    _input["count"] += 1                      # for "<word> undo"
                 if k.vkCode == want_vk and not k.flags & LLKHF_INJECTED:
                     if wparam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                         if not self.down:                 # ignore auto-repeat
@@ -155,7 +170,12 @@ class TriggerListener:
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
         def on_mouse(code, wparam, lparam):
-            if code == 0 and wparam in (WM_XBUTTONDOWN, WM_XBUTTONUP):
+            if code == 0 and wparam in CLICKS:
+                m = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+                if not m.flags & LLMHF_INJECTED and not (
+                        wparam == WM_XBUTTONDOWN and xbutton_number(m.mouseData) == want_btn):
+                    _input["count"] += 1                      # for "<word> undo"
+            if code == 0 and want_btn and wparam in (WM_XBUTTONDOWN, WM_XBUTTONUP):
                 m = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
                 if not m.flags & LLMHF_INJECTED and xbutton_number(m.mouseData) == want_btn:
                     if wparam == WM_XBUTTONDOWN and not self.down:
@@ -167,14 +187,19 @@ class TriggerListener:
                     return 1
             return user32.CallNextHookEx(None, code, wparam, lparam)
 
-        self._proc = HOOKPROC(on_key if is_key else on_mouse)     # keep a reference
-        hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL if is_key else WH_MOUSE_LL, self._proc,
-                                        kernel32.GetModuleHandleW(None), 0)
-        if not hook:
+        # Both hooks: one watches the Assistant key; the other only counts presses and clicks
+        # for "<word> undo" (it never swallows anything).
+        self._procs = (HOOKPROC(on_key), HOOKPROC(on_mouse))       # keep references
+        module = kernel32.GetModuleHandleW(None)
+        hooks = [user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._procs[0], module, 0),
+                 user32.SetWindowsHookExW(WH_MOUSE_LL, self._procs[1], module, 0)]
+        if not hooks[0 if is_key else 1]:
             raise RuntimeError("couldn't watch the Assistant key (SetWindowsHookEx failed)")
         self._thread_id = kernel32.GetCurrentThreadId()
         _message_loop()                                  # returns when stop() is called
-        user32.UnhookWindowsHookEx(hook)
+        for hook in hooks:
+            if hook:
+                user32.UnhookWindowsHookEx(hook)
         self.events.put("stop")
 
     def stop(self):
@@ -318,6 +343,11 @@ def press_enter():
 
 def press_escape():
     _send([(0x1B, 0, 0), (0x1B, 0, KEYEVENTF_KEYUP)])
+
+
+def press_backspace(times):
+    """Backspace `times` times ("<word> undo")."""
+    _send([(0x08, 0, 0), (0x08, 0, KEYEVENTF_KEYUP)] * int(times))
 
 
 def caps_lock_off():

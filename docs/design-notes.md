@@ -828,6 +828,7 @@ simple and easy to use out of the box is one of the project's main goals.
 | "<word> help" | Opens the voice commands window | new |
 | "<word> new topic" (optionally followed by a request) | Starts a fresh conversation, then sends the request if there is one | new, conversation-management branch |
 | "<word> stop" | Interrupts the assistant's current work (presses Escape in its window) | new |
+| "<word> undo" | Removes the dictation just typed, if nothing was typed or clicked since (added 2026-11-23) | new |
 
 **Candidates held back** (not approved; weigh against the 7-command limit before adding any):
 - **"<word> scratch that":** approved 2026-11-23 as **"<word> undo"** (see its own plan under
@@ -1072,20 +1073,35 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
   showed the notice; a normal launch didn't.
 - **Not yet on a real Windows PC.**
 
-### "<word> undo": remove what was just typed (added 2026-11-23, not started)
+### "<word> undo": remove what was just typed (added and built 2026-11-23)
 
-- **What it does:** removes the text FT Assistant typed last, for when Whisper mishears. It's the
-  "scratch that" candidate from the voice commands plan, under a shorter name.
-- **Only when it's safe:** only if the same window still has focus and nothing was typed or
-  clicked since. Otherwise it does nothing and shows a short notice. FT Assistant knows how many
-  characters it typed and presses Backspace that many times.
-- **Kept in memory only:** the length of the last dictation, never its text. It's forgotten after
-  the undo, or when the focus changes.
-- **To check first:** how to notice that the user typed or clicked since (Linux: the X11 key and
-  button events FT Assistant already reads; Windows: the same hooks). Also whether undo should
-  work in an assistant's window, where Enter has already sent the request (no: there it does
-  nothing).
-- **The voice commands list** becomes 6 commands (still under 7).
+- **What it does:** removes the dictation FT Assistant typed last, for when Whisper mishears. It
+  was the "scratch that" candidate from the voice commands plan, under a shorter name. It works
+  in "Dictation only" too.
+- **Only when it's safe:** the same window still has focus, and the user hasn't pressed a key
+  or clicked since (the wheel doesn't count). Otherwise nothing is deleted and a notice says
+  why ("Nothing to undo." / "Nothing was undone: you've typed or clicked since."). It undoes
+  once; any other voice command in between also cancels it.
+- **Not in an assistant's window after "<word>, ...":** only plain dictation can be undone;
+  a request has already been sent with Enter.
+- **What's kept, in memory only:** the window, the length of the last dictation (never its
+  text) and a count of the user's key presses and clicks (`plat.input_count()`, never which
+  keys). Nothing is saved or logged.
+- **How presses and clicks are counted:**
+  - Linux: the Assistant key's XRecord listener now records every key and button. FT
+    Assistant's own typing (xdotool) looks like the user's to X, so presses are ignored while
+    it types and for 0.3 s after (`SYNTH_GRACE`).
+  - Windows: both low-level hooks (keyboard and mouse) are installed; the one that isn't for
+    the Assistant key only counts and never swallows anything. Injected input (FT Assistant's
+    own typing) is ignored by its flag.
+- **Removing:** Backspace as many times as characters were typed (`press_backspace`).
+- **The voice commands list** has 6 commands now (still under 7).
+- **Tested 2026-11-23:** unit tests (undo right after; not after a press or click; not in another
+  window; only once; not after another command; nothing typed yet; only the length kept), and
+  on Linux in a throwaway text window: FT Assistant's own typing and Backspace weren't counted,
+  a key press after them was, and undo removed exactly the last dictation.
+- **Not yet:** a live dictation test, and a real Windows PC (the second hook; if Windows ever
+  dropped it, counting would stop, so this needs a check there).
 
 ## On the `conversation-management` branch
 

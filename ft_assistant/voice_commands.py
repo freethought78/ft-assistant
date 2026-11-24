@@ -18,6 +18,7 @@ COMMANDS = (
     ("{w}", "Opens your assistant's window, with the current conversation.", False),
     ("{w} stop", "Stops what your assistant is doing right now, like pressing Esc in its window.",
      False),
+    ("{w} undo", "Removes what it just typed, if you haven't typed or clicked since.", True),
     ("{w} setup", "Opens the setup screen.", True),
     ("{w} help", "Shows this list.", True),
 )

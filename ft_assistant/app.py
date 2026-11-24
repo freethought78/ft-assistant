@@ -4,6 +4,7 @@
 - "Assistant, <request>" goes to the chosen code agent (Claude Code or OpenCode) in a visible
   terminal window, or straight into the agent's terminal if you're already typing in one.
 - "Assistant setup" opens the setup screen.
+- "Assistant undo" removes the dictation just typed, if nothing was typed or clicked since.
 
 What the user says is never written to the log; only sizes and timings are."""
 
@@ -79,6 +80,9 @@ class App:
         self.setup_proc = None          # the setup screen, while it's open
         self.commands_proc = None       # the voice commands window ("<word> help")
         self.listener = None            # the current Assistant key listener
+        # The last dictation typed, for "<word> undo": (window, how many characters, the input
+        # count then). Its length only, never its text; forgotten after an undo or any command.
+        self.last_typed = None
         self.caps_trigger = (settings.trigger.get("type") == "key"
                              and settings.trigger.get("keysym") == "Caps_Lock")
 
@@ -138,9 +142,16 @@ class App:
         log.debug("%.1fs audio -> %.2fs, %s, %d chars", dur, time.time() - t, cmd.kind, len(cmd.text))
         if self.caps_trigger:
             plat.caps_lock_off()
+        if cmd.kind == "undo":
+            self.undo(focus)
+            return
+        self.last_typed = None
         if cmd.kind == "dictate":
             if cmd.text:
-                plat.type_text(cmd.text + " ")
+                typed = cmd.text + " "
+                plat.type_text(typed)
+                if focus[0] is not None:
+                    self.last_typed = (focus[0], len(typed), plat.input_count())
         elif cmd.kind == "setup":
             self.open_setup()
         elif cmd.kind == "help":
@@ -149,6 +160,21 @@ class App:
             self.stop_assistant(focus)
         else:
             self.run_assistant(cmd.text, focus)
+
+    def undo(self, focus):
+        """ "<word> undo": Backspace over the last dictation, only if it's surely still the last
+        thing in that window: the same window has focus and the user hasn't typed or clicked
+        since. Otherwise nothing is deleted."""
+        last, self.last_typed = self.last_typed, None
+        if last is None:
+            plat.notify("Nothing to undo.")
+            return
+        wid, length, count = last
+        if focus[0] != wid or plat.input_count() != count:
+            plat.notify("Nothing was undone: you've typed or clicked since.")
+            return
+        plat.press_backspace(length)
+        log.debug("undid the last dictation")
 
     def in_harness(self, focus):
         wid, cls, title = focus

@@ -83,9 +83,10 @@ def check_keyword(word):
 # The voice commands after the command word, besides "<word>, <request>" and "<word>" alone.
 # Kept deliberately few (at most about 7 commands in all): see the voice commands plan in
 # docs/design-notes.md. Each needs to be an everyday word, unlikely as the start of a request.
-SPOKEN_COMMANDS = {"setup": "setup", "set up": "setup", "help": "help", "stop": "stop"}
+SPOKEN_COMMANDS = {"setup": "setup", "set up": "setup", "help": "help", "stop": "stop",
+                   "undo": "undo"}
 # Without an assistant ("Dictation only"), only these still mean something.
-DICTATION_ONLY_COMMANDS = ("setup", "help")
+DICTATION_ONLY_COMMANDS = ("setup", "help", "undo")
 
 
 def route(text, dictation_only=False, keyword=DEFAULT_KEYWORD):
@@ -121,7 +122,7 @@ def parse_command(text, keyword=DEFAULT_KEYWORD):
 # speech, one more reason to keep the commands few.
 def keyword_hints(keyword=DEFAULT_KEYWORD):
     k = keyword or DEFAULT_KEYWORD
-    return (k, f"{k} setup", f"{k} help", f"{k} stop")
+    return (k, f"{k} setup", f"{k} help", f"{k} stop", f"{k} undo")
 
 
 def build_hotwords(vocabulary_words, keyword=DEFAULT_KEYWORD):
