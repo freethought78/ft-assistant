@@ -116,6 +116,35 @@ def last_conversation(harness_key, folder):
     return None
 
 
+def last_activity(harness_key, folder):
+    """When the newest conversation in `folder` last changed (seconds since 1970), or None.
+    It includes the agent's own work, so a long task doesn't count as quiet."""
+    try:
+        if harness_key == "claude":
+            times = [p.stat().st_mtime for p in claude_project_dir(folder).glob("*.jsonl")]
+            return max(times) if times else None
+        if harness_key == "opencode":
+            db = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+            if not db.exists():
+                return None
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            try:
+                row = con.execute(
+                    "select max(time_updated) from session where directory = ? "
+                    "and parent_id is null and time_archived is null", (str(folder),)).fetchone()
+            finally:
+                con.close()
+            return row[0] / 1000 if row and row[0] else None
+    except (OSError, sqlite3.Error):
+        return None
+    return None
+
+
+# Typed into an open assistant window to start a new conversation there (the old one stays
+# saved and can be resumed).
+NEW_CONVERSATION = {"claude": "/clear", "opencode": "/new"}
+
+
 def _node_version(bin_dir):
     """Sort key for an nvm folder like ~/.nvm/versions/node/v24.19.0/bin (newest first)."""
     nums = re.findall(r"\d+", bin_dir.parent.name)
@@ -191,9 +220,10 @@ def new_window_kwargs(cmd):
     return {"creationflags": CREATE_NEW_CONSOLE}
 
 
-def open_session(harness_key, prompt, launcher=subprocess.Popen):
+def open_session(harness_key, prompt, launcher=subprocess.Popen, new=False):
     """Open a visible terminal window with the chosen harness in the neutral folder,
-    continuing the last conversation there (one ongoing conversation, no build-up).
+    continuing the last conversation there (one ongoing conversation, no build-up), or with
+    `new`, starting a new conversation.
     Returns (harness, the started process: the terminal program, or on Windows the agent)."""
     h = HARNESSES[harness_key]
     exe = find_exe(h)
@@ -201,7 +231,7 @@ def open_session(harness_key, prompt, launcher=subprocess.Popen):
         raise RuntimeError(f"{h.name} isn't installed. Say \"Assistant setup\" to install it.")
     folder = config.sessions_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    resume = last_conversation(harness_key, folder)
+    resume = None if new else last_conversation(harness_key, folder)
     argv = h.argv(folder, prompt, resume)
     argv[0] = exe              # the full path: the terminal may not find it on its own
     cmd = terminal_command(argv, folder)

@@ -67,6 +67,20 @@ class ParseCommand(unittest.TestCase):
         self.assertEqual(parse_command("Assistant, help me write a test."),
                          Command("assistant", "help me write a test."))
 
+    def test_new_topic(self):
+        for s in ("Assistant new topic", "Assistant, new topic.", "assistant New-topic!"):
+            self.assertEqual(parse_command(s), Command("new_topic", ""), s)
+        # A request after a pause goes to the new conversation.
+        self.assertEqual(parse_command("Assistant, new topic. Check the build."),
+                         Command("new_topic", "Check the build."))
+        self.assertEqual(parse_command("Assistant new topic, what's the weather?"),
+                         Command("new_topic", "what's the weather?"))
+        # Without a pause it's an ordinary request.
+        self.assertEqual(parse_command("Assistant, new topic ideas for the blog."),
+                         Command("assistant", "new topic ideas for the blog."))
+        # No assistant ("Dictation only"): just typed.
+        self.assertEqual(route("Assistant new topic", dictation_only=True).kind, "dictate")
+
     def test_undo(self):
         for s in ("Assistant undo", "Assistant, undo.", "assistant Undo!"):
             self.assertEqual(parse_command(s), Command("undo"), s)
@@ -121,12 +135,14 @@ class CommandWord(unittest.TestCase):
 
 class Hotwords(unittest.TestCase):
     def test_keyword_hints_always_first(self):
-        hints = "Assistant, Assistant setup, Assistant help, Assistant stop, Assistant undo"
+        hints = ("Assistant, Assistant setup, Assistant help, Assistant stop, Assistant undo, "
+                 "Assistant new topic")
         self.assertEqual(build_hotwords([]), hints)
         self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
                          hints + ", Discord, Claude")
         self.assertEqual(build_hotwords(["Claude"], "Jarvis"),
-                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Jarvis undo, Claude")
+                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Jarvis undo, "
+                         "Jarvis new topic, Claude")
 
 
 if __name__ == "__main__":

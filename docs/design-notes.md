@@ -1174,7 +1174,8 @@ recommended:
      commands" under `next`). A phrase to continue anyway after the gap is held back, because
      "Assistant, continue ..." clashes with requests that really start with "continue".
    - Small change; fixes the mixing and the growth at no extra cost. Could ship on its own.
-2. **Topic notes with an index, kept by the agent.**
+2. **Topic notes with an index, kept by the agent.** (Dropped 2026-11-24: see "Topic notes ...
+   built, tried and dropped" below.)
    - FT Assistant creates, in `~/FT Assistant sessions/`:
      - an instruction file, `CLAUDE.md` for Claude Code and `AGENTS.md` for OpenCode, with the
        same text. Both programs load it automatically at the start of every conversation.
@@ -1217,7 +1218,7 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
 - Tested on Linux with both harnesses, then in the Windows test bottle.
 
 **Decided by the user (2026-11-23):**
-- **It works out of the box:** the quiet gap and topic notes are on by default.
+- **It works out of the box:** the quiet gap (and topic notes, later dropped) on by default.
 - **No new settings on the setup screen.** How these work is explained in the voice commands
   window instead (see "Setup screen: less on it" under `next`). This replaces the setup-screen
   choices above (Off / 15 / 30 / 60 minutes, "Keep topic notes").
@@ -1231,11 +1232,53 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
 - **Release order:** "<word> new topic" and the quiet gap first (they store nothing new), topic
   notes in a later release.
 
-**Still open:**
-- **Turning topic notes off** without a setup-screen setting: deleting the notes folder, a
-  voice command, or only `settings.json`.
-- **The privacy explanation for topic notes,** since they're on by default: it goes in the voice
-  commands window and the release notes. Existing users get a notice when they update.
+**Built (first part, 2026-11-23, on this branch):** "<word> new topic" and the quiet gap.
+- **"<word> new topic"** starts a new conversation. A request can follow after a pause ("Assistant,
+  new topic. Check the build."); without the pause ("new topic ideas for the blog") it's an
+  ordinary request. It also works while dictating in the assistant's window. It's the 7th voice
+  command (the limit) and a Whisper hint.
+- **The quiet gap:** "<word>, ..." from outside the assistant's window starts a new conversation
+  when the current one has had no activity for `quiet_gap_minutes` (settings.json, default 15, 0
+  turns it off; no setup-screen control). Activity: Claude Code's newest conversation file time,
+  OpenCode's `session.time_updated` (`harness.last_activity`). Not applied to "<word>" alone (it
+  shows the current conversation) or to dictating in the assistant's window. Explained by one
+  "Good to know" line in the voice commands window.
+- **The open window is reused:** FT Assistant types `/clear` (Claude Code) or `/new` (OpenCode)
+  there, waits 1.5 s, then sends the request. No open window: a new one starts without
+  `--continue` / `--session`.
+- **`FT_ASSISTANT_SESSIONS_DIR`** overrides the sessions folder, for tests.
+- **Tested 2026-11-23:** unit tests (parsing; the setting; last activity; recent activity
+  continues; the gap; gap off; "<word>" alone; the open window cleared first; new topic in and out
+  of the window; dictating in the window ignores the gap), and in throwaway Claude Code and
+  OpenCode windows in a throwaway folder: `/clear` ("Start a new session with empty context;
+  previous session stays on disk") and `/new` ("New session") both started a new conversation.
+- **Found while testing:** OpenCode's one-time "What's new" popup after an OpenCode update takes
+  the first keys typed (here "/new", and Enter closed it). It affects any request typed right
+  after an OpenCode update, not only this; left as is for now.
+- **Not yet:** a live test with dictation.
+
+**Topic notes ("conversation notes"): built, tried and dropped (2026-11-23 to 2026-11-24).**
+- **Built** on this branch (commits 8715397 and 25fe31b, both reverted): a block of instructions
+  in `CLAUDE.md` and `AGENTS.md` in the sessions folder, notes in `notes/` with an index, and a
+  setup-screen checkbox ("Conversation notes"), on by default; off never deleted notes. Reworded
+  after the first test as "a log of work, not a second memory".
+- **Why dropped:** Claude Code's own memory already does it. Asked to remember something, it
+  saved it in its own memory and ignored notes/. More telling: its memory for the sessions folder
+  already held two work logs it had kept by itself before notes existed ("project" memories: an
+  audio problem, "what was tried, what was ruled out, next candidates" for a game freeze). One
+  overnight conversation with the instructions in place wrote no notes. The user's FT Assistant
+  conversations are mostly short, standalone requests. Only OpenCode (no memory of its own) would
+  have gained, not enough for a setting, files and another explanation (keep it simple).
+- **What solves the original problem:** "<word> new topic" and the quiet gap keep conversations
+  short and on one topic; Claude Code's memory carries what matters across.
+- **Cleaned up:** the instructions files and the empty notes folder were removed from the user's
+  sessions folder (checked first: only FT Assistant's block and the empty index). Claude Code's
+  own memory wasn't touched.
+- **Kept from that work:** Save on the setup screen keeps settings it doesn't show (it would have
+  reset a custom quiet gap), and `tests/__init__.py` points `FT_ASSISTANT_SESSIONS_DIR` at a
+  throwaway folder so no test can touch the real one.
+- **If OpenCode users miss a memory,** notes could return for OpenCode alone (the reverted commits
+  have the code).
 
 ## Open questions
 

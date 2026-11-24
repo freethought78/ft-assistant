@@ -85,6 +85,10 @@ def check_keyword(word):
 # docs/design-notes.md. Each needs to be an everyday word, unlikely as the start of a request.
 SPOKEN_COMMANDS = {"setup": "setup", "set up": "setup", "help": "help", "stop": "stop",
                    "undo": "undo"}
+# "<word> new topic" starts a new conversation, and may be followed by a request after a pause
+# ("Assistant, new topic. Check the build."). The pause (punctuation from Whisper) is needed, so
+# "Assistant, new topic ideas for the blog" stays an ordinary request.
+_NEW_TOPIC_RE = re.compile(r"^new[\s-]+topic(?:\s*$|[.,:;!?]+\s*(.*)$)", re.I | re.S)
 # Without an assistant ("Dictation only"), only these still mean something.
 DICTATION_ONLY_COMMANDS = ("setup", "help", "undo")
 
@@ -112,6 +116,9 @@ def parse_command(text, keyword=DEFAULT_KEYWORD):
     said = re.sub(r"[^a-z]+", " ", rest.lower()).strip()
     if said in SPOKEN_COMMANDS:
         return Command(SPOKEN_COMMANDS[said])
+    m = _NEW_TOPIC_RE.match(rest)
+    if m:
+        return Command("new_topic", (m.group(1) or "").strip())
     return Command("assistant", rest)
 
 
@@ -122,7 +129,7 @@ def parse_command(text, keyword=DEFAULT_KEYWORD):
 # speech, one more reason to keep the commands few.
 def keyword_hints(keyword=DEFAULT_KEYWORD):
     k = keyword or DEFAULT_KEYWORD
-    return (k, f"{k} setup", f"{k} help", f"{k} stop", f"{k} undo")
+    return (k, f"{k} setup", f"{k} help", f"{k} stop", f"{k} undo", f"{k} new topic")
 
 
 def build_hotwords(vocabulary_words, keyword=DEFAULT_KEYWORD):

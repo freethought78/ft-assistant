@@ -3,6 +3,7 @@
 Run as its own process (python -m ft_assistant.setup_ui) so the main app keeps running.
 Exit code 10 means settings were saved and changed; 0 means nothing changed."""
 
+import dataclasses
 import queue
 import subprocess
 import sys
@@ -169,7 +170,8 @@ def installed_dir():
 class SetupWindow:
     def __init__(self, root, settings, first_run):
         self.root = root
-        self.original = config.Settings(settings.harness, dict(settings.trigger), settings.keyword)
+        # Every setting, also those this screen doesn't show (kept as they are on Save)
+        self.original = dataclasses.replace(settings, trigger=dict(settings.trigger))
         self.trigger = dict(settings.trigger)
         self.first_run = first_run
         self.capture_q = queue.Queue()
@@ -345,7 +347,8 @@ class SetupWindow:
         word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
         self.commands_win = voice_commands.open_from_setup(
             self.root, word, keys.display_name(self.trigger),
-            self.harness_var.get() == config.DICTATION_ONLY, self.base_px)
+            self.harness_var.get() == config.DICTATION_ONLY, self.base_px,
+            getattr(self.original, "quiet_gap_minutes", 0))
 
     # ---- size and scrolling
 
@@ -686,7 +689,8 @@ class SetupWindow:
         if warning and word != self.original.keyword and not messagebox.askyesno(
                 "Use this command word?", warning + "\n\nUse it anyway?", parent=self.root):
             return
-        new = config.Settings(self.harness_var.get(), dict(self.trigger), word)
+        new = dataclasses.replace(self.original, harness=self.harness_var.get(),
+                                  trigger=dict(self.trigger), keyword=word)
         if new.harness not in config.CHOICES:
             return
         # Dictation only needs no assistant, so there's nothing to check or ask about.
