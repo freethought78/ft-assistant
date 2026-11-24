@@ -345,7 +345,8 @@ class SetupWindow:
         word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
         self.commands_win = voice_commands.open_from_setup(
             self.root, word, keys.display_name(self.trigger),
-            self.harness_var.get() == config.DICTATION_ONLY, self.base_px)
+            self.harness_var.get() == config.DICTATION_ONLY, self.base_px,
+            getattr(self.original, "quiet_gap_minutes", 0))
 
     # ---- size and scrolling
 

@@ -1231,6 +1231,31 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
 - **Release order:** "<word> new topic" and the quiet gap first (they store nothing new), topic
   notes in a later release.
 
+**Built (first part, 2026-11-23, on this branch):** "<word> new topic" and the quiet gap.
+- **"<word> new topic"** starts a new conversation. A request can follow after a pause ("Assistant,
+  new topic. Check the build."); without the pause ("new topic ideas for the blog") it's an
+  ordinary request. It also works while dictating in the assistant's window. It's the 7th voice
+  command (the limit) and a Whisper hint.
+- **The quiet gap:** "<word>, ..." from outside the assistant's window starts a new conversation
+  when the current one has had no activity for `quiet_gap_minutes` (settings.json, default 15, 0
+  turns it off; no setup-screen control). Activity: Claude Code's newest conversation file time,
+  OpenCode's `session.time_updated` (`harness.last_activity`). Not applied to "<word>" alone (it
+  shows the current conversation) or to dictating in the assistant's window. Explained by one
+  "Good to know" line in the voice commands window.
+- **The open window is reused:** FT Assistant types `/clear` (Claude Code) or `/new` (OpenCode)
+  there, waits 1.5 s, then sends the request. No open window: a new one starts without
+  `--continue` / `--session`.
+- **`FT_ASSISTANT_SESSIONS_DIR`** overrides the sessions folder, for tests.
+- **Tested 2026-11-23:** unit tests (parsing; the setting; last activity; recent activity
+  continues; the gap; gap off; "<word>" alone; the open window cleared first; new topic in and out
+  of the window; dictating in the window ignores the gap), and in throwaway Claude Code and
+  OpenCode windows in a throwaway folder: `/clear` ("Start a new session with empty context;
+  previous session stays on disk") and `/new` ("New session") both started a new conversation.
+- **Found while testing:** OpenCode's one-time "What's new" popup after an OpenCode update takes
+  the first keys typed (here "/new", and Enter closed it). It affects any request typed right
+  after an OpenCode update, not only this; left as is for now.
+- **Not yet:** a live test with dictation.
+
 **Still open:**
 - **Turning topic notes off** without a setup-screen setting: deleting the notes folder, a
   voice command, or only `settings.json`.

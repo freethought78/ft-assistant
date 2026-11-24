@@ -48,8 +48,18 @@ def data_dir():
 
 
 def sessions_dir():
-    """Neutral starting folder for every new agent session (never an existing project)."""
+    """Neutral starting folder for every new agent session (never an existing project).
+    FT_ASSISTANT_SESSIONS_DIR overrides it (tests use a throwaway folder, never the real one)."""
+    override = os.environ.get("FT_ASSISTANT_SESSIONS_DIR")
+    if override:
+        return Path(override)
     return Path.home() / "FT Assistant sessions"
+
+
+# "<word>, ..." from outside the assistant's window starts a new conversation after this long
+# without activity in the current one. Works out of the box, with no setup-screen control (the
+# user's decision, 2026-11-23); kept in settings.json, where 0 turns it off.
+QUIET_GAP_MINUTES = 15
 
 
 @dataclass
@@ -57,6 +67,7 @@ class Settings:
     harness: str = ""        # "none" (Dictation only) | "claude" | "opencode" | "" (not chosen yet)
     trigger: dict = field(default_factory=lambda: dict(DEFAULT_TRIGGER))
     keyword: str = "Assistant"     # the command word: "<keyword>, request" / "<keyword> setup"
+    quiet_gap_minutes: int = QUIET_GAP_MINUTES      # 0: always continue the conversation
 
     @property
     def harness_chosen(self):
@@ -95,6 +106,9 @@ def load():
     word, error, _ = check_keyword(data.get("keyword", ""))
     if word and not error:
         s.keyword = word
+    gap = data.get("quiet_gap_minutes")
+    if isinstance(gap, int) and not isinstance(gap, bool) and 0 <= gap <= 24 * 60:
+        s.quiet_gap_minutes = gap
     return s
 
 

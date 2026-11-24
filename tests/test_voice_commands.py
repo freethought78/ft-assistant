@@ -12,8 +12,8 @@ except ImportError:
 class CommandList(unittest.TestCase):
     def test_lists_every_command_with_the_users_word(self):
         said = [say for say, _ in voice_commands.command_list("Jarvis")]
-        self.assertEqual(said, ["Jarvis, ...", "Jarvis", "Jarvis stop", "Jarvis undo",
-                                "Jarvis setup", "Jarvis help"])
+        self.assertEqual(said, ["Jarvis, ...", "Jarvis", "Jarvis new topic, ...", "Jarvis stop",
+                                "Jarvis undo", "Jarvis setup", "Jarvis help"])
 
     def test_dictation_only_shows_only_what_works(self):
         said = [say for say, _ in voice_commands.command_list("Assistant", dictation_only=True)]
@@ -28,10 +28,16 @@ class CommandList(unittest.TestCase):
         self.assertIn("nothing you say is sent anywhere",
                       " ".join(voice_commands.notes("Jarvis", dictation_only=True)))
 
+    def test_the_quiet_gap_is_explained(self):
+        self.assertIn("After 15 quiet minutes, \"Assistant, ...\" starts a new conversation",
+                      " ".join(voice_commands.notes("Assistant", quiet_gap=15)))
+        self.assertNotIn("quiet", " ".join(voice_commands.notes("Assistant", quiet_gap=0)))
+        self.assertNotIn("quiet", " ".join(voice_commands.notes("Assistant", True, 15)))
+
     def test_each_note_is_one_sentence(self):
         # Keep it simple: one sentence per note, nothing long to read.
         for dictation_only in (False, True):
-            for line in voice_commands.notes("Assistant", dictation_only):
+            for line in voice_commands.notes("Assistant", dictation_only, quiet_gap=15):
                 self.assertEqual(line.count(". "), 0, line)
                 self.assertLess(len(line), 140, line)
 

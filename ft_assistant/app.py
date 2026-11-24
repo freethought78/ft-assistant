@@ -4,6 +4,7 @@
 - "Assistant, <request>" goes to the chosen code agent (Claude Code or OpenCode) in a visible
   terminal window, or straight into the agent's terminal if you're already typing in one.
 - "Assistant setup" opens the setup screen.
+- "Assistant new topic" starts a new conversation (also by itself after a quiet gap).
 - "Assistant undo" removes the dictation just typed, if nothing was typed or clicked since.
 
 What the user says is never written to the log; only sizes and timings are."""
@@ -28,6 +29,7 @@ from .setup_ui import CHANGED as SETUP_CHANGED
 MIN_SEC = 0.35             # ignore taps shorter than this
 MIN_RMS = 0.002            # ignore near-silent recordings
 OPENED_WINDOW_WAIT = 8.0   # seconds to watch for the terminal window we just opened
+NEW_CONVERSATION_WAIT = 1.5   # after /clear or /new, before typing the request
 TITLE_WAIT = 20.0          # and then for its assistant to set the window title
 
 log = logging.getLogger("ft_assistant")
@@ -158,6 +160,8 @@ class App:
             self.open_commands()
         elif cmd.kind == "stop":
             self.stop_assistant(focus)
+        elif cmd.kind == "new_topic":
+            self.run_assistant(cmd.text, focus, new=True)
         else:
             self.run_assistant(cmd.text, focus)
 
@@ -213,8 +217,34 @@ class App:
                 del self.agent_window[k]
             agent_windows.save(self.window_file, self.login, dict(self.agent_window))
 
-    def run_assistant(self, text, focus):
-        if self.in_harness(focus):
+    def focused_harness(self, focus):
+        """Which assistant the focused assistant window is (in_harness(focus) is true)."""
+        wid, _cls, title = focus
+        return harness.harness_from_title(title) or next(
+            (k for k, w in self.agent_window.items() if w == wid), None) or self.settings.harness
+
+    def quiet_too_long(self, key):
+        """Has the current conversation had no activity for the quiet gap? Then "<word>, ..."
+        from elsewhere starts a new one (the agent's own work counts as activity)."""
+        gap = self.settings.quiet_gap_minutes
+        if not gap:
+            return False
+        last = harness.last_activity(key, config.sessions_dir())
+        return last is not None and time.time() - last > gap * 60
+
+    def new_conversation_here(self, key):
+        """Start a new conversation in the focused assistant window: /clear (Claude Code) or /new
+        (OpenCode). The old conversation stays saved."""
+        plat.type_text(harness.NEW_CONVERSATION[key])
+        time.sleep(0.3)                  # let the command menu settle before Enter
+        plat.press_enter()
+        time.sleep(NEW_CONVERSATION_WAIT)
+
+    def run_assistant(self, text, focus, new=False):
+        """ "<word>, <text>": to the assistant. new: in a new conversation ("<word> new topic")."""
+        if self.in_harness(focus):       # dictating in its window: always that conversation
+            if new:
+                self.new_conversation_here(self.focused_harness(focus))
             if text:
                 plat.type_text(text)
                 plat.press_enter()
@@ -225,9 +255,14 @@ class App:
                         f"\"{self.settings.keyword} setup\".")
             return
         key = self.settings.harness
+        if text and not new and self.quiet_too_long(key):
+            new = True
+            log.debug("quiet gap passed: new %s conversation", key)
         # One ongoing conversation: if its window is still open, bring it forward and send there.
         wid = self.agent_window_for(key)
         if wid is not None and plat.activate_window(wid):
+            if new:
+                self.new_conversation_here(key)
             if text:
                 plat.type_text(text)
                 plat.press_enter()
@@ -236,7 +271,7 @@ class App:
         before = plat.terminal_windows()
         folder = config.sessions_dir()
         running = plat.processes_in(folder) if folder.is_dir() else set()
-        h, proc = harness.open_session(key, text)
+        h, proc = harness.open_session(key, text, new=new)
         log.debug("opened %s window", h.key)
         threading.Thread(target=self._remember_new_window,
                          args=(key, before, (folder, running, proc)), daemon=True).start()
@@ -290,9 +325,8 @@ class App:
         The assistant window being dictated to, or else the one FT Assistant opened (brought to
         the front)."""
         if self.in_harness(focus):           # Escape goes to the focused window
-            wid, _cls, title = focus
-            key = harness.harness_from_title(title) or next(
-                (k for k, w in self.agent_window.items() if w == wid), None) or self.settings.harness
+            wid = focus[0]
+            key = self.focused_harness(focus)
         else:
             self.settings = config.load()
             key = self.settings.harness
