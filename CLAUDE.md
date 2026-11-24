@@ -30,8 +30,12 @@ the user doesn't intend to go back. Fixes reach the user as FT Assistant release
 
 - **`main` = released code** (latest tag `v0.4.0`; the user's install is 0.3.1 until they accept the update). **`next` = development**
   (now 0.5.0.dev0).
+- **The README on GitHub is the complete user manual** (the user's decision, 2026-11-24; the
+  setup screen's **Manual** button opens it). It isn't shipped as a file. **Before every
+  release, bring README.md up to date** with every user-visible change; `tests/test_manual.py`
+  checks the voice commands and hidden settings are in it.
 - **Changes reach the user as releases, through the built-in updater**, not by copying files:
-  merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
+  update README.md (above), merge `next` into `main`, set the version, tag `vX.Y.Z`, `python3 installer/build.py`, and
   `gh release create vX.Y.Z dist/FT-Assistant-Installer.cmd dist/FT-Assistant-setup.cmd` (as
   freethought78; the second is the same file under its pre-0.3.0 name, for a release or two). The app notices
   within a day (or via "Check for updates") and asks the user. The v0.1.0 -> v0.2.0 update on

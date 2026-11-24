@@ -77,7 +77,7 @@ class AfterARestart(unittest.TestCase):
         a.our_windows = set(saved.values())
         a.titled = set(saved.values())
         a.window_file, a.login, a.windows_lock = None, None, app.threading.Lock()
-        a.settings = mock.Mock(harness="claude", uses_assistant=True)
+        a.settings = mock.Mock(harness="claude", uses_assistant=True, quiet_gap_minutes=0)
         return a
 
     def ask(self, a, title, focus=(1, "firefox", "Docs")):
