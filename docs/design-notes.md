@@ -103,6 +103,15 @@ Last updated: 2026-11-17 (full review and cleanup)
 
   Tested live on Linux. Not tested on Windows where the bottle couldn't (the user's decision,
   2026-11-23: skip those Windows checks for now and push ahead).
+- **v0.5.0** (2026-11-24): conversation management, merged from its branch:
+  - "<word> new topic", and a new conversation after 15 quiet minutes (`quiet_gap_minutes`),
+    started in the open window with `/clear` or `/new`;
+  - conversation notes were tried and dropped (Claude Code's own memory already keeps work logs);
+  - notifications only for problems and updates;
+  - the README rewritten as the complete manual, with a Manual button on the setup screen;
+  - Save on the setup screen keeps settings it doesn't show.
+
+  Tested live on Linux; not on Windows where the bottle couldn't.
 
 ## Carried over from the current tool (unchanged)
 
