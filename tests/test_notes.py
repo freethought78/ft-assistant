@@ -26,6 +26,19 @@ class OnOff(unittest.TestCase):
             self.assertIn("read notes/INDEX.md", self.text(name))
         self.assertTrue((self.dir / "notes" / "INDEX.md").exists())
 
+    def test_a_support_for_the_assistants_memory_not_a_second_one(self):
+        notes.apply(self.dir, True)
+        for name in notes.FILES:
+            self.assertIn("not a second memory", self.text(name))
+            self.assertIn("log of work", self.text(name))
+
+    def test_where_earlier_conversations_are(self):
+        from ft_assistant import harness
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/home/u/.claude"}):
+            notes.apply(self.dir, True)
+        self.assertIn(str(harness.claude_project_dir(self.dir, "/home/u")), self.text("CLAUDE.md"))
+        self.assertNotIn(".jsonl", self.text("AGENTS.md"))       # OpenCode keeps them elsewhere
+
     def test_off_keeps_every_note_and_on_brings_them_back(self):
         notes.apply(self.dir, True)
         note = self.dir / "notes" / "build.md"

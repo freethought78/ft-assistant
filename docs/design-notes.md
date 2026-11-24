@@ -1285,7 +1285,16 @@ above; the user calls them conversation notes).
 - **Tested 2026-11-23:** unit tests (on; off keeps notes; on again; the user's own text kept; off
   creates nothing new; no needless rewrites; an existing index kept; the setting; saving keeps
   other settings; the "Good to know" line; the app follows the setting).
-- **Not yet:** a live check that the assistants actually keep and use notes.
+- **First live test (2026-11-23):** asked to "remember" a preference, Claude Code saved it in
+  its own memory, not in notes/. The user then weighed dropping notes, and decided to keep them as
+  a support for the assistant's own memory: Claude Code's memory keeps lasting facts and
+  preferences, but not a log of what was worked on, and it doesn't search old conversations by
+  itself. **Reworded** so the two don't compete: notes are "a log of work, not a second memory"
+  (what was asked, done, decided, how it turned out, where things are; one note per topic), lasting
+  facts stay in the assistant's own memory, and CLAUDE.md names the exact folder of earlier
+  conversations (`~/.claude/projects/<folder>/*.jsonl`).
+- **Next:** a day or two of normal use on the test build, then a look at what landed in notes/
+  (file names only, unless the user asks). Mostly duplicates or nothing: drop notes then.
 
 **Still open:**
 - **Telling existing users** about conversation notes when they update (on by default): the
