@@ -1174,7 +1174,8 @@ recommended:
      commands" under `next`). A phrase to continue anyway after the gap is held back, because
      "Assistant, continue ..." clashes with requests that really start with "continue".
    - Small change; fixes the mixing and the growth at no extra cost. Could ship on its own.
-2. **Topic notes with an index, kept by the agent.**
+2. **Topic notes with an index, kept by the agent.** (Dropped 2026-11-24: see "Topic notes ...
+   built, tried and dropped" below.)
    - FT Assistant creates, in `~/FT Assistant sessions/`:
      - an instruction file, `CLAUDE.md` for Claude Code and `AGENTS.md` for OpenCode, with the
        same text. Both programs load it automatically at the start of every conversation.
@@ -1217,7 +1218,7 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
 - Tested on Linux with both harnesses, then in the Windows test bottle.
 
 **Decided by the user (2026-11-23):**
-- **It works out of the box:** the quiet gap and topic notes are on by default.
+- **It works out of the box:** the quiet gap (and topic notes, later dropped) on by default.
 - **No new settings on the setup screen.** How these work is explained in the voice commands
   window instead (see "Setup screen: less on it" under `next`). This replaces the setup-screen
   choices above (Off / 15 / 30 / 60 minutes, "Keep topic notes").
@@ -1256,49 +1257,28 @@ user can see, edit and delete. The user chose on by default (2026-11-23, see bel
   after an OpenCode update, not only this; left as is for now.
 - **Not yet:** a live test with dictation.
 
-**Built (second part, 2026-11-23, on this branch): conversation notes** (the "topic notes"
-above; the user calls them conversation notes).
-- **On or off is a checkbox on the setup screen**, under the assistant choice: "Conversation
-  notes: new conversations can pick up earlier work". On by default. The user chose this over
-  deleting files or a voice command (2026-11-23): an exception to "no new settings", because
-  people should see whether notes are on.
-- **Turning off never deletes notes,** so no warning is needed: turning on again brings them
-  back. (Had off meant deleting, the user wanted a confirmation first.)
-- **How (`notes.py`):** FT Assistant doesn't write notes. It keeps a block of instructions,
-  between markers, in `CLAUDE.md` and `AGENTS.md` in the sessions folder (each assistant reads
-  its file at the start of every conversation there). On: read `notes/INDEX.md` at the start, read
-  a matching note, write a short note with a descriptive index line when finishing something worth
-  keeping, look through old conversations only when the user refers to earlier work, never put
-  secrets in notes. Off: one line, "don't read or write the notes/ folder unless the user asks".
-  Anything the user writes outside the markers is kept. Off creates nothing in a folder that never
-  had notes.
-- **Applied** before every "<word>, ..." from outside the assistant's window, and when Save on the
-  setup screen changes the checkbox. An open conversation follows the change from its next
-  conversation on.
-- **Explained** by one "Good to know" line: where the notes are, and that the setup screen turns
-  them off.
-- **Fixed on the way:** Save on the setup screen rebuilt the settings from the three it shows, so it
-  would have reset a custom `quiet_gap_minutes`. It now keeps every setting it doesn't show.
-- **Tests never touch the real sessions folder:** `tests/__init__.py` points
-  `FT_ASSISTANT_SESSIONS_DIR` at a throwaway folder (a first test run wrote the instructions into
-  the user's real, empty sessions folder; they were checked and removed the same minute).
-- **Tested 2026-11-23:** unit tests (on; off keeps notes; on again; the user's own text kept; off
-  creates nothing new; no needless rewrites; an existing index kept; the setting; saving keeps
-  other settings; the "Good to know" line; the app follows the setting).
-- **First live test (2026-11-23):** asked to "remember" a preference, Claude Code saved it in
-  its own memory, not in notes/. The user then weighed dropping notes, and decided to keep them as
-  a support for the assistant's own memory: Claude Code's memory keeps lasting facts and
-  preferences, but not a log of what was worked on, and it doesn't search old conversations by
-  itself. **Reworded** so the two don't compete: notes are "a log of work, not a second memory"
-  (what was asked, done, decided, how it turned out, where things are; one note per topic), lasting
-  facts stay in the assistant's own memory, and CLAUDE.md names the exact folder of earlier
-  conversations (`~/.claude/projects/<folder>/*.jsonl`).
-- **Next:** a day or two of normal use on the test build, then a look at what landed in notes/
-  (file names only, unless the user asks). Mostly duplicates or nothing: drop notes then.
-
-**Still open:**
-- **Telling existing users** about conversation notes when they update (on by default): the
-  release notes, besides the "Good to know" line. Turning them off was settled (the checkbox).
+**Topic notes ("conversation notes"): built, tried and dropped (2026-11-23 to 2026-11-24).**
+- **Built** on this branch (commits 8715397 and 25fe31b, both reverted): a block of instructions
+  in `CLAUDE.md` and `AGENTS.md` in the sessions folder, notes in `notes/` with an index, and a
+  setup-screen checkbox ("Conversation notes"), on by default; off never deleted notes. Reworded
+  after the first test as "a log of work, not a second memory".
+- **Why dropped:** Claude Code's own memory already does it. Asked to remember something, it
+  saved it in its own memory and ignored notes/. More telling: its memory for the sessions folder
+  already held two work logs it had kept by itself before notes existed ("project" memories: an
+  audio problem, "what was tried, what was ruled out, next candidates" for a game freeze). One
+  overnight conversation with the instructions in place wrote no notes. The user's FT Assistant
+  conversations are mostly short, standalone requests. Only OpenCode (no memory of its own) would
+  have gained, not enough for a setting, files and another explanation (keep it simple).
+- **What solves the original problem:** "<word> new topic" and the quiet gap keep conversations
+  short and on one topic; Claude Code's memory carries what matters across.
+- **Cleaned up:** the instructions files and the empty notes folder were removed from the user's
+  sessions folder (checked first: only FT Assistant's block and the empty index). Claude Code's
+  own memory wasn't touched.
+- **Kept from that work:** Save on the setup screen keeps settings it doesn't show (it would have
+  reset a custom quiet gap), and `tests/__init__.py` points `FT_ASSISTANT_SESSIONS_DIR` at a
+  throwaway folder so no test can touch the real one.
+- **If OpenCode users miss a memory,** notes could return for OpenCode alone (the reverted commits
+  have the code).
 
 ## Open questions
 

@@ -32,7 +32,7 @@ def command_list(word, dictation_only=False):
             if always or not dictation_only]
 
 
-def notes(word, dictation_only=False, quiet_gap=0, conversation_notes=False):
+def notes(word, dictation_only=False, quiet_gap=0):
     """The "Good to know" lines under the list: one sentence each."""
     out = [f"Anything you say without \"{word}\" first is typed where your cursor is."]
     if dictation_only:
@@ -44,16 +44,12 @@ def notes(word, dictation_only=False, quiet_gap=0, conversation_notes=False):
         if quiet_gap:
             out.append(f"After {quiet_gap} quiet minutes, \"{word}, ...\" starts a new "
                        "conversation by itself.")
-        if conversation_notes:
-            out.append("Your assistant keeps short notes in the \"FT Assistant sessions\" folder; "
-                       "you can turn them off on the setup screen.")
         out.append("When your assistant asks to approve something, answer with the keyboard: "
                    "voice never approves anything.")
     return out
 
 
-def fill(win, word, key_name, dictation_only, base_px, on_close, quiet_gap=0,
-         conversation_notes=False):
+def fill(win, word, key_name, dictation_only, base_px, on_close, quiet_gap=0):
     """Put the list into `win` (a Tk root or Toplevel, already themed)."""
     pad = round(1.2 * base_px)
     wrap = round(26 * base_px)
@@ -72,7 +68,7 @@ def fill(win, word, key_name, dictation_only, base_px, on_close, quiet_gap=0,
     ttk.Label(f, text="Good to know", style="Head.TLabel").grid(
         row=r, columnspan=2, sticky="w", pady=(pad, 2))
     r += 1
-    for line in notes(word, dictation_only, quiet_gap, conversation_notes):
+    for line in notes(word, dictation_only, quiet_gap):
         ttk.Label(f, text=line, wraplength=wrap + round(8 * base_px), style="Note.TLabel").grid(
             row=r, columnspan=2, sticky="w", pady=(4, 0))
         r += 1
@@ -101,15 +97,14 @@ def place(win, near=None):
     win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
 
-def open_from_setup(parent, word, key_name, dictation_only, base_px, quiet_gap=0,
-                    conversation_notes=False):
+def open_from_setup(parent, word, key_name, dictation_only, base_px, quiet_gap=0):
     """The window over the setup screen (shares its look). Returns the Toplevel."""
     top = tk.Toplevel(parent)
     top.withdraw()
     top.title(TITLE)
     top.transient(parent)
     top.configure(bg=parent.cget("bg"))
-    fill(top, word, key_name, dictation_only, base_px, top.destroy, quiet_gap, conversation_notes)
+    fill(top, word, key_name, dictation_only, base_px, top.destroy, quiet_gap)
     place(top, parent)
     top.deiconify()
     return top
@@ -127,7 +122,7 @@ def main():
     family, base_px, _ = setup_ui.desktop_look(root)
     setup_ui.apply_dark_theme(root, family, base_px)
     fill(root, settings.keyword, keys.display_name(settings.trigger), settings.dictation_only,
-         base_px, root.destroy, settings.quiet_gap_minutes, settings.conversation_notes)
+         base_px, root.destroy, settings.quiet_gap_minutes)
     place(root)
     root.deiconify()
     root.lift()

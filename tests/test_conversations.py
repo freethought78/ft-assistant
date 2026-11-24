@@ -35,6 +35,18 @@ class QuietGapSetting(unittest.TestCase):
         for bad in (-5, "15", True, 99999, 1.5):
             self.assertEqual(self.load({"quiet_gap_minutes": bad}), 15, bad)
 
+    def test_saving_keeps_the_gap(self):
+        # The setup screen saves only what it shows; a custom gap must survive it.
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.dict(os.environ, {"FT_ASSISTANT_CONFIG_DIR": d}):
+            config.save(config.Settings(harness="claude", quiet_gap_minutes=30))
+            self.assertEqual(config.load().quiet_gap_minutes, 30)
+
+    def test_setup_keeps_settings_it_doesnt_show(self):
+        src = (Path(config.__file__).parent / "setup_ui.py").read_text()
+        self.assertIn("dataclasses.replace(self.original", src)
+        self.assertNotIn("config.Settings(self.harness_var.get()", src)
+
     def test_throwaway_sessions_folder(self):
         with mock.patch.dict(os.environ, {"FT_ASSISTANT_SESSIONS_DIR": "/tmp/ft-test-sessions"}):
             self.assertEqual(config.sessions_dir(), Path("/tmp/ft-test-sessions"))
@@ -128,18 +140,6 @@ class NewConversations(unittest.TestCase):
         typed, _ = self.ask(a, "next thing", new=True, last=time.time(),
                             focus=(9, "gnome-terminal-server", "OC | Old"))
         self.assertEqual(typed, ["/new", "<Enter>", "next thing", "<Enter>"])   # OpenCode's
-
-    def test_conversation_notes_follow_the_setting(self):
-        from ft_assistant import notes
-        a = self.make_app()
-        a.settings.conversation_notes = True
-        self.ask(a, "check it", last=time.time())
-        claude_md = config.sessions_dir() / "CLAUDE.md"
-        self.assertIn("read notes/INDEX.md", claude_md.read_text())
-        a.settings.conversation_notes = False
-        self.ask(a, "check it", last=time.time())
-        self.assertIn("turned off", claude_md.read_text())
-        self.assertTrue((config.sessions_dir() / notes.NOTES_DIR).exists())   # never deleted
 
     def test_dictating_in_the_window_ignores_the_gap(self):
         typed, open_session = self.ask(self.make_app(), "go on", last=0,
