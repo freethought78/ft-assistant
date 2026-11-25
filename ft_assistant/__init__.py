@@ -1,3 +1,3 @@
 """FT Assistant: push-to-talk dictation with an "Assistant" keyword for code agents."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0.dev0"
