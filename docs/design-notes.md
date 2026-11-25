@@ -1155,6 +1155,90 @@ voice commands (opened by "<word> help" or the "Voice commands..." button).
 - **Kept current:** a release step in CLAUDE.md, and `tests/test_manual.py` (every voice command,
   and every setting without a setup-screen control, must be in the README).
 
+### Conversations last as long as their window; "send" and "close" (the user's decision, 2026-11-25)
+
+- **The 15-minute quiet gap (0.5.0) is gone.** In use, the user gave the assistant a task that ran
+  over 15 minutes; the window still showed the whole conversation, but the next request started a
+  new one, and the assistant knew nothing about it. Activity was read from the conversation file,
+  which a single long step doesn't write to, and any timer can misjudge. A silent context loss is
+  worse than none.
+- **Now:** a conversation lasts as long as its window. Open: requests (and "<word>" alone) bring
+  it forward and continue it. Closed: the next request, or "<word>" alone, opens a new window with a
+  new conversation (no `--continue`; `last_conversation`, `last_activity` and
+  `quiet_gap_minutes` are removed). "<word> new topic" still starts fresh in the open window.
+  There's no resume command: the old conversation can be reopened inside the assistant.
+- **"<word> close"** quits the assistant in FT Assistant's own window: Esc (once for Claude Code,
+  twice for OpenCode) to stop any work, then `/exit` and Enter; the terminal window then closes by
+  itself. If it's still open after 6 s, the window is closed directly (`close_window`). Never any
+  other window: a focused Claude Code window that FT Assistant didn't open is left alone.
+- **"<word> send"** presses Enter in the focused window, in any program (also in "Dictation only").
+- **Sound-alikes (2026-11-25):** "Assistant send" sometimes came back as "Assistant sent" and was
+  sent as a request. Likely mishearings of each short command now count as it, but only as the
+  whole rest of the dictation (`SPOKEN_COMMANDS`: sent/cent/scent/sends -> send; closed/clothes/
+  closes -> close; undue/"un do" -> undo; stopped/stops -> stop), so "Assistant, sent items folder"
+  stays a request.
+- **The voice command limit** is now about 9 (it was 7); the list has 9.
+- **Found in the user's live test (2026-11-25): "Assistant" alone was typed into the assistant's
+  window and sent.** Cause: Whisper echoing its hints. The hints were phrases ("Assistant setup,
+  Assistant help, ..."); on short commands Whisper sometimes returned them again ("Assistant,
+  help, Assistant, help."; "Assistant send, Assistant"), and whatever followed the command word
+  became a request. 0.5.0's 6 phrases did it too, more rarely. Tested on 18 synthetic clips
+  (espeak-ng, two voices, every command): the word once plus bare command words 18/18, 8 phrases
+  15/18, 0.5.0's 6 phrases 17/18, the word alone 17/18 (once it repeated "Assistant" endlessly).
+  **Fixed twice:** the hints are now "<word>, setup, help, stop, undo, new topic, send, close"
+  (`keyword_hints`), and `drop_echo` removes an echoed command word (the word alone, or after a
+  pause with nothing or the same words after it). With both, 18/18; with the old phrases and
+  `drop_echo`, also 18/18.
+- **Tested 2026-11-25:** unit tests (open window continues; closed window starts new; "<word>"
+  alone; new topic; close from outside and inside the window; the fallback; never another Claude
+  window; no window; send), and in throwaway Claude Code and OpenCode windows in a throwaway folder:
+  Esc then `/exit` quit both and their windows closed by themselves within a second, with no
+  "close anyway?" question.
+
+### The Assistant mouse button never reaches other programs (found and fixed 2026-11-25)
+
+- **The problem (the user's report):** holding button 12 with the cursor over Claude Desktop
+  brought Claude Desktop to the front, hiding the assistant's window, and the dictation could then
+  go there (FT Assistant types into the window focused at release).
+- **Why:** on Linux, a mouse-button Assistant key was only listened to (XRecord), not grabbed like
+  keyboard keys, so the window under the cursor got the press too. Cinnamon itself raises windows
+  only for a left click (tested: buttons 9 and 10 over a plain window did nothing), but
+  Chromium-based apps activate themselves on any mouse button (tested: buttons 9 and 10 over a
+  throwaway Chrome window brought it forward). Not input-remapper: the user's only mapping turns
+  another trackball button into a middle click; button 12 is passed through as is.
+- **Fix, for any button and any program:** `TriggerListener._grab` grabs whichever button is the
+  Assistant key on the root window, with any modifiers (as keyboard keys already were, and as
+  Windows already swallows it). No window receives it. Only that button; other buttons are
+  untouched. If another program already holds that grab, a warning is logged and it works as
+  before.
+- **Tested 2026-11-25:** unit tests (buttons 8, 9, 10, 12 and 15 grabbed, keys still grabbed, the
+  warning), and with a throwaway Chrome window: with button 10 as the Assistant button, holding
+  it over Chrome left focus where it was and the listener saw press and release; button 9 (not
+  the Assistant button) still brought Chrome forward.
+
+### The Assistant key works while setup is open (the user's request, 2026-11-25)
+
+- **Before:** when FT Assistant opened the setup screen, the key paused until it closed. Opened
+  from the menu instead, the key kept working, but a newly saved key only counted after a restart
+  (FT Assistant didn't know setup had been open).
+- **Now (`setup_state.py`):** while open, the setup screen keeps `setup-open.json` in the settings
+  folder: its process id, the key it shows, and whether "Change key" is waiting. FT Assistant
+  looks every 0.5 s (`App.watch_setup`):
+  - the key keeps working, and a newly chosen key works at once, before Save, so it can be tried;
+  - it pauses only while "Change key" waits for the new key;
+  - when setup closes, the saved settings count: Save keeps the new key, Cancel goes back. This
+    also applies a key saved from the menu-opened setup at once, and "<word> setup" doesn't open
+    a second setup screen;
+  - the key never switches in the middle of a dictation.
+- **A file left by a crashed setup is ignored:** on Linux its process must be named "FT Asst
+  setup"; on Windows it must still run (checked with OpenProcess, never `os.kill`, which ends a
+  process there). The file holds only the key and the process id, and is removed on any exit
+  (`atexit`).
+- **Tested 2026-11-25:** unit tests (the file; a stale or bad file; the app keeps the key, switches
+  to a new one before Save, back on Cancel, keeps it on Save, pauses only while capturing, never
+  mid-dictation, one setup screen), and a real setup screen: the file appeared with the key and was
+  gone after closing it with the X.
+
 ## On the `conversation-management` branch
 
 **Merged into `next` on 2026-11-24** (the user's go-ahead), with "<word> new topic" and the quiet

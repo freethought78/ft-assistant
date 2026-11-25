@@ -74,7 +74,10 @@ def _synthesizing():
 
 class TriggerListener:
     """Calls on_press/on_release when the Assistant key (keyboard key or extra mouse button)
-    goes down/up. Keyboard keys are also grabbed so the key itself never reaches other apps."""
+    goes down/up. Whichever it is, it's also grabbed, so it never reaches other programs (as on
+    Windows). Mouse buttons were only listened to until 2026-11-25: the window under the cursor
+    got the press too, and Chromium-based apps (Claude Desktop, Chrome) then came to the front,
+    taking the dictation with them."""
 
     def __init__(self, trigger, on_press, on_release):
         self.trigger = trigger
@@ -92,17 +95,27 @@ class TriggerListener:
                 raise RuntimeError(f"key {self.trigger['keysym']!r} isn't on this keyboard")
             self.keycode = code
 
-    def _grab_key(self):
-        """Grab the key on the root window so apps don't receive it (any modifiers)."""
-        d = display.Display()
+    def _grab(self, open_display=None):
+        """Grab the Assistant key or mouse button on the root window, with any modifiers, so no
+        program receives it. A grab on the root window comes first for the whole screen, so the
+        window under the cursor (or with focus) never sees it."""
+        d = (open_display or display.Display)()
         root = d.screen().root
         errors = []
-        root.grab_key(self.keycode, X.AnyModifier, True, X.GrabModeAsync, X.GrabModeAsync,
-                      onerror=lambda *a: errors.append(a))
+        if self.trigger["type"] == "key":
+            root.grab_key(self.keycode, X.AnyModifier, True, X.GrabModeAsync, X.GrabModeAsync,
+                          onerror=lambda *a: errors.append(a))
+            what = "key"
+        else:
+            root.grab_button(self.trigger["button"], X.AnyModifier, False,
+                             X.ButtonPressMask | X.ButtonReleaseMask,
+                             X.GrabModeAsync, X.GrabModeAsync, X.NONE, X.NONE,
+                             onerror=lambda *a: errors.append(a))
+            what = "mouse button"
         d.sync()
         if errors:
-            log.warning("could not grab the Assistant key (another program uses it); "
-                        "it will still work but the key also reaches other apps")
+            log.warning("could not grab the Assistant %s (another program uses it); "
+                        "it will still work but also reaches other programs", what)
         self._grab_dpy = d
 
         def drain():  # grabbed events must be read or they queue up
@@ -117,8 +130,7 @@ class TriggerListener:
         """Blocks forever, dispatching press/release events."""
         rdpy = display.Display()
         self._resolve(rdpy)
-        if self.keycode is not None:
-            self._grab_key()
+        self._grab()
         is_key = self.trigger["type"] == "key"
         events = (X.KeyPress, X.KeyRelease) if is_key else (X.ButtonPress, X.ButtonRelease)
         want = self.keycode if is_key else self.trigger["button"]
@@ -249,6 +261,12 @@ def press_enter():
 def press_escape():
     with _synthesizing():
         subprocess.run(["xdotool", "key", "--clearmodifiers", "Escape"])
+
+
+def close_window(wid):
+    """Ask the window manager to close a window (as its close button does)."""
+    subprocess.run(["wmctrl", "-ic", hex(int(wid))], stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, timeout=5)
 
 
 def press_backspace(times):
@@ -387,6 +405,15 @@ def processes_in(folder):
             except OSError:
                 pass
     return out
+
+
+def setup_running(pid):
+    """Is `pid` a running FT Assistant setup screen? (Its process is named "FT Asst setup".)"""
+    try:
+        with open(f"/proc/{int(pid)}/comm", encoding="utf-8") as f:
+            return f.read().strip() == "FT Asst setup"
+    except (OSError, ValueError):
+        return False
 
 
 def window_title(wid):

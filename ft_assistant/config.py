@@ -56,10 +56,6 @@ def sessions_dir():
     return Path.home() / "FT Assistant sessions"
 
 
-# "<word>, ..." from outside the assistant's window starts a new conversation after this long
-# without activity in the current one. Works out of the box, with no setup-screen control (the
-# user's decision, 2026-11-23); kept in settings.json, where 0 turns it off.
-QUIET_GAP_MINUTES = 15
 
 
 @dataclass
@@ -67,7 +63,6 @@ class Settings:
     harness: str = ""        # "none" (Dictation only) | "claude" | "opencode" | "" (not chosen yet)
     trigger: dict = field(default_factory=lambda: dict(DEFAULT_TRIGGER))
     keyword: str = "Assistant"     # the command word: "<keyword>, request" / "<keyword> setup"
-    quiet_gap_minutes: int = QUIET_GAP_MINUTES      # 0: always continue the conversation
 
     @property
     def harness_chosen(self):
@@ -96,20 +91,26 @@ def load():
         return s
     if data.get("harness") in CHOICES:
         s.harness = data["harness"]
-    trig = data.get("trigger")
-    if isinstance(trig, dict) and (
-            (trig.get("type") == "key" and isinstance(trig.get("keysym"), str) and trig["keysym"])
-            or (trig.get("type") == "button" and isinstance(trig.get("button"), int)
-                and trig["button"] not in (1, 2, 3, 4, 5, 6, 7))):
-        s.trigger = {k: trig[k] for k in ("type", "keysym", "button") if k in trig}
+    trig = valid_trigger(data.get("trigger"))
+    if trig:
+        s.trigger = trig
     from .textproc import check_keyword
     word, error, _ = check_keyword(data.get("keyword", ""))
     if word and not error:
         s.keyword = word
-    gap = data.get("quiet_gap_minutes")
-    if isinstance(gap, int) and not isinstance(gap, bool) and 0 <= gap <= 24 * 60:
-        s.quiet_gap_minutes = gap
     return s
+
+
+def valid_trigger(trig):
+    """A usable Assistant key ({"type": "key", "keysym": ...} or {"type": "button", "button": n},
+    never the main mouse buttons or the wheel), tidied; else None."""
+    if isinstance(trig, dict) and (
+            (trig.get("type") == "key" and isinstance(trig.get("keysym"), str) and trig["keysym"])
+            or (trig.get("type") == "button" and isinstance(trig.get("button"), int)
+                and not isinstance(trig.get("button"), bool)
+                and trig["button"] not in (1, 2, 3, 4, 5, 6, 7))):
+        return {k: trig[k] for k in ("type", "keysym", "button") if k in trig}
+    return None
 
 
 def save(s):

@@ -4,7 +4,9 @@
 - "Assistant, <request>" goes to the chosen code agent (Claude Code or OpenCode) in a visible
   terminal window, or straight into the agent's terminal if you're already typing in one.
 - "Assistant setup" opens the setup screen.
-- "Assistant new topic" starts a new conversation (also by itself after a quiet gap).
+- "Assistant new topic" starts a new conversation; "Assistant close" closes the assistant's
+  window, which ends its conversation (a conversation lasts as long as its window).
+- "Assistant send" presses Enter.
 - "Assistant undo" removes the dictation just typed, if nothing was typed or clicked since.
 
 What the user says is never written to the log; only sizes and timings are."""
@@ -20,19 +22,25 @@ import time
 
 import numpy as np
 
-from . import agent_windows, buildinfo, config, harness, open_setup, procname, textproc, updater
+from . import (agent_windows, buildinfo, config, harness, open_setup, procname, setup_state,
+               textproc, updater)
 from . import plat
 from .audio import SAMPLE_RATE, START_BEEP, STOP_BEEP, Recorder, beep
 from .engine import Engine
-from .setup_ui import CHANGED as SETUP_CHANGED
 
 MIN_SEC = 0.35             # ignore taps shorter than this
+SETUP_WATCH = 0.5          # seconds between looks at whether a setup screen is open
 MIN_RMS = 0.002            # ignore near-silent recordings
 OPENED_WINDOW_WAIT = 8.0   # seconds to watch for the terminal window we just opened
 NEW_CONVERSATION_WAIT = 1.5   # after /clear or /new, before typing the request
+CLOSE_WAIT = 6.0           # seconds for the assistant's window to close after /exit
 TITLE_WAIT = 20.0          # and then for its assistant to set the window title
 
 log = logging.getLogger("ft_assistant")
+
+
+def is_caps(trigger):
+    return trigger.get("type") == "key" and trigger.get("keysym") == "Caps_Lock"
 
 
 def setup_logging():
@@ -85,14 +93,18 @@ class App:
         # The last dictation typed, for "<word> undo": (window, how many characters, the input
         # count then). Its length only, never its text; forgotten after an undo or any command.
         self.last_typed = None
-        self.caps_trigger = (settings.trigger.get("type") == "key"
-                             and settings.trigger.get("keysym") == "Caps_Lock")
+        # The key being listened to: the saved one, or while a setup screen is open, the one it
+        # shows (a new key works before Save). It pauses while "Change key" waits for a press.
+        self.active_trigger = dict(settings.trigger)
+        self.setup_open = False
+        self.setup_capturing = False
+        self.caps_trigger = is_caps(self.active_trigger)
 
     # ---- key handling (called from the listener thread)
 
     def on_press(self):
         with self.ctl:
-            if self.down or self.setup_proc is not None:   # paused while setup is open
+            if self.down or self.setup_capturing:   # "Change key" is waiting for the new key
                 return
             self.down = True
             try:
@@ -162,6 +174,10 @@ class App:
             self.stop_assistant(focus)
         elif cmd.kind == "new_topic":
             self.run_assistant(cmd.text, focus, new=True)
+        elif cmd.kind == "send":
+            plat.press_enter()
+        elif cmd.kind == "close":
+            self.close_assistant(focus)
         else:
             self.run_assistant(cmd.text, focus)
 
@@ -221,15 +237,6 @@ class App:
         return harness.harness_from_title(title) or next(
             (k for k, w in self.agent_window.items() if w == wid), None) or self.settings.harness
 
-    def quiet_too_long(self, key):
-        """Has the current conversation had no activity for the quiet gap? Then "<word>, ..."
-        from elsewhere starts a new one (the agent's own work counts as activity)."""
-        gap = self.settings.quiet_gap_minutes
-        if not gap:
-            return False
-        last = harness.last_activity(key, config.sessions_dir())
-        return last is not None and time.time() - last > gap * 60
-
     def new_conversation_here(self, key):
         """Start a new conversation in the focused assistant window: /clear (Claude Code) or /new
         (OpenCode). The old conversation stays saved."""
@@ -253,10 +260,8 @@ class App:
                         f"\"{self.settings.keyword} setup\".")
             return
         key = self.settings.harness
-        if text and not new and self.quiet_too_long(key):
-            new = True
-            log.debug("quiet gap passed: new %s conversation", key)
-        # One ongoing conversation: if its window is still open, bring it forward and send there.
+        # A conversation lasts as long as its window: if it's open, bring it forward and send
+        # there; if it was closed, a new window starts a new conversation.
         wid = self.agent_window_for(key)
         if wid is not None and plat.activate_window(wid):
             if new:
@@ -269,7 +274,7 @@ class App:
         before = plat.terminal_windows()
         folder = config.sessions_dir()
         running = plat.processes_in(folder) if folder.is_dir() else set()
-        h, proc = harness.open_session(key, text, new=new)
+        h, proc = harness.open_session(key, text)
         log.debug("opened %s window", h.key)
         threading.Thread(target=self._remember_new_window,
                          args=(key, before, (folder, running, proc)), daemon=True).start()
@@ -337,6 +342,35 @@ class App:
             plat.press_escape()
         log.debug("interrupted the %s window", key)
 
+    def close_assistant(self, focus):
+        """ "<word> close": quit the assistant in the window FT Assistant opened for it, which
+        closes the window and ends its conversation. Never any other window (the user's own
+        Claude Code or OpenCode sessions included)."""
+        wid, _cls, title = focus
+        if wid is not None and wid in self.our_windows and self._still_ours(wid, title):
+            key = self.focused_harness(focus)
+        else:
+            self.settings = config.load()
+            key = self.settings.harness
+            wid = self.agent_window_for(key) if key in harness.HARNESSES else None
+        if wid is None or not plat.activate_window(wid):
+            return                               # no assistant window: nothing to close
+        for i in range(self.STOP_PRESSES.get(key, 1)):     # stop any work first
+            if i:
+                time.sleep(0.3)
+            plat.press_escape()
+        time.sleep(0.3)
+        plat.type_text(harness.EXIT[key])
+        time.sleep(0.3)                          # let the command menu settle before Enter
+        plat.press_enter()
+        end = time.time() + CLOSE_WAIT
+        while time.time() < end and wid in plat.terminal_windows():
+            time.sleep(0.3)
+        if wid in plat.terminal_windows():       # didn't quit: close the window itself
+            plat.close_window(wid)
+        self._forget(wid)
+        log.debug("closed the %s window", key)
+
     def open_commands(self):
         """ "<word> help": the voice commands window, in its own process."""
         if self.commands_proc is not None and self.commands_proc.poll() is None:
@@ -345,29 +379,48 @@ class App:
                                                "ft_assistant.voice_commands"])
 
     def open_setup(self):
-        """Show the setup screen in its own process; the Assistant key is paused meanwhile."""
-        if self.setup_proc is not None:
+        """Show the setup screen in its own process. The Assistant key keeps working meanwhile
+        (see setup_state). Only one setup screen: not when one is open already, from the menu say."""
+        if self.setup_open or (self.setup_proc is not None and self.setup_proc.poll() is None):
             return
         argv, env = open_setup.command()
         self.setup_proc = subprocess.Popen(argv, env=env)
-        threading.Thread(target=self._wait_setup, daemon=True).start()
 
-    def _wait_setup(self):
-        code = self.setup_proc.wait()
-        old_trigger = self.settings.trigger
-        self.settings = config.load()
-        self.caps_trigger = (self.settings.trigger.get("type") == "key"
-                             and self.settings.trigger.get("keysym") == "Caps_Lock")
-        self.setup_proc = None
-        if code == SETUP_CHANGED and self.settings.trigger != old_trigger and self.listener:
-            # Switch keys in place: stop watching the old key; main() starts the new one.
-            log.debug("Assistant key changed; switching to it")
+    def watch_setup(self, once=False):
+        """Follow the setup screen, however it was opened: listen to the key it shows (saved or
+        not), pause while it waits for a new key, and when it closes, use the saved settings."""
+        while True:
+            try:
+                state = setup_state.read()
+                if state:
+                    self.setup_open = True
+                    self.setup_capturing = state["capturing"]
+                    want = state["trigger"]
+                else:
+                    if self.setup_open:                # it just closed: Save or Cancel
+                        self.setup_open = self.setup_capturing = False
+                        self.settings = config.load()
+                    want = self.settings.trigger
+                if want != self.active_trigger and not self.down:
+                    self.switch_trigger(want)
+            except Exception:
+                log.exception("following the setup screen failed")
+            if once:
+                return
+            time.sleep(SETUP_WATCH)
+
+    def switch_trigger(self, trigger):
+        """Listen to another Assistant key: stop the current listener; main() starts the new one."""
+        self.active_trigger = dict(trigger)
+        self.caps_trigger = is_caps(self.active_trigger)
+        log.debug("switching the Assistant key")
+        if self.listener:
             self.listener.stop()
 
     # ---- update check (background thread)
 
     def busy(self):
-        return self.down or self.jobs.unfinished_tasks or self.setup_proc is not None
+        return self.down or self.jobs.unfinished_tasks or self.setup_open
 
     def update_loop(self):
         """About a minute after start, then hourly: if a day has passed since the last check,
@@ -426,6 +479,7 @@ def main():
     app = App(settings, log_file)
     threading.Thread(target=app.worker, daemon=True).start()
     threading.Thread(target=app.update_loop, daemon=True).start()
+    threading.Thread(target=app.watch_setup, daemon=True).start()
     trig = settings.trigger
     log.info("ready: version %s, Assistant key %s, harness %s", buildinfo.describe(),
              trig.get("keysym") or f"mouse button {trig.get('button')}",
@@ -436,5 +490,5 @@ def main():
     while True:                     # a new listener whenever the Assistant key is changed
         app.listener = plat.TriggerListener(trig, app.on_press, app.on_release)
         app.listener.run()          # blocks until the key changes
-        trig = app.settings.trigger
+        trig = app.active_trigger
         log.debug("ready: Assistant key %s", trig.get("keysym") or f"mouse button {trig.get('button')}")
