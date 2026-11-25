@@ -16,12 +16,12 @@ class Manual(unittest.TestCase):
     def test_every_voice_command_is_in_it(self):
         for say, _ in voice_commands.command_list("Assistant"):
             spoken = say.removesuffix("...").rstrip(", ")
-            self.assertIn(f'"{spoken}', README, f"voice command {say!r} missing from README.md")
+            self.assertTrue(f'"{spoken}' in README, f"voice command {say!r} missing from README.md")
 
     def test_hidden_settings_are_explained(self):
         for field in dataclasses.fields(config.Settings):
             if field.name not in ON_THE_SETUP_SCREEN:
-                self.assertIn(f'"{field.name}"', README, f"setting {field.name} missing")
+                self.assertTrue(f'"{field.name}"' in README, f"setting {field.name} missing")
 
     def test_the_setup_screens_manual_button_points_here(self):
         try:

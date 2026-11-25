@@ -363,6 +363,12 @@ def press_escape():
 
 
 INPUT_MOUSE, MOUSEEVENTF_WHEEL = 0, 0x0800
+WM_CLOSE = 0x0010
+
+
+def close_window(hwnd):
+    """Ask a window to close (as its close button does)."""
+    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
 
 
 def input_watch_ok(wait=HOOK_CHECK_WAIT):
@@ -434,6 +440,22 @@ def is_terminal_class(cls):
 def processes_in(folder):
     """Not known on Windows (None): there the agent itself is the started process."""
     return None
+
+
+def setup_running(pid):
+    """Is process `pid` still running? (Checked without ever stopping it: os.kill would.)"""
+    try:
+        handle = kernel32.OpenProcess(0x1000, False, int(pid))     # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = wintypes.DWORD()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == 259                    # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return False
 
 
 def window_title(hwnd):

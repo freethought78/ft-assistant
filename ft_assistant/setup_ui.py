@@ -3,6 +3,7 @@
 Run as its own process (python -m ft_assistant.setup_ui) so the main app keeps running.
 Exit code 10 means settings were saved and changed; 0 means nothing changed."""
 
+import atexit
 import dataclasses
 import queue
 import subprocess
@@ -16,7 +17,7 @@ from tkinter import messagebox, ttk
 
 from . import (__version__, buildinfo, config, harness, keys, look, textproc, updater,
                voice_commands)
-from . import plat, procname
+from . import plat, procname, setup_state
 
 CHANGED = 10
 CAPTURE_SECONDS = 15
@@ -339,6 +340,7 @@ class SetupWindow:
             self._show_update(rel)
         root.protocol("WM_DELETE_WINDOW", self._cancel)
         root.bind("<FocusIn>", lambda e: self._refresh())   # e.g. after installing
+        self._share()
         self._refresh()
         root.update_idletasks()
         self._fit()
@@ -359,8 +361,7 @@ class SetupWindow:
         word = textproc.check_keyword(self.word_var.get())[0] or self.original.keyword
         self.commands_win = voice_commands.open_from_setup(
             self.root, word, keys.display_name(self.trigger),
-            self.harness_var.get() == config.DICTATION_ONLY, self.base_px,
-            getattr(self.original, "quiet_gap_minutes", 0))
+            self.harness_var.get() == config.DICTATION_ONLY, self.base_px)
 
     # ---- size and scrolling
 
@@ -562,8 +563,14 @@ class SetupWindow:
 
     # ---- capturing a new Assistant key
 
+    def _share(self):
+        """Tell the running FT Assistant which key this screen shows (it works before Save) and
+        whether "Change key" is waiting for a key press (the key pauses meanwhile)."""
+        setup_state.write(self.trigger, self.capturing)
+
     def _start_capture(self):
         self.capturing = True
+        self._share()
         self.change_btn.configure(state="disabled")
         self.capture_deadline = time.time() + CAPTURE_SECONDS
         self.key_tips.grid()
@@ -588,6 +595,12 @@ class SetupWindow:
         self.capturing = False
         self.change_btn.configure(state="normal")
         self.key_tips.grid_remove()
+        try:
+            self._apply_capture(trig)
+        finally:
+            self._share()             # the new key works at once; Cancel goes back to the saved one
+
+    def _apply_capture(self, trig):
         if trig is None:
             self.capture_msg.configure(text="No key was pressed. The Assistant key is unchanged.")
         elif keys.refusal(trig):
@@ -597,8 +610,8 @@ class SetupWindow:
             self.capture_msg.configure(text="The Assistant key is unchanged.")
         else:
             self.trigger = trig
-            self.capture_msg.configure(text=f"New Assistant key: {keys.display_name(trig)}. "
-                                            "Click Save to use it.")
+            self.capture_msg.configure(text=f"New Assistant key: {keys.display_name(trig)}. Try "
+                                            "it now; Save keeps it, Cancel goes back.")
         self._refresh()
 
     # ---- updates
@@ -743,6 +756,7 @@ def dpi_aware():
 
 def main():
     procname.set_name("setup")
+    atexit.register(setup_state.clear)      # however the screen closes: Save, Cancel, the X
     settings = config.load()
     dpi_aware()
     root = tk.Tk()

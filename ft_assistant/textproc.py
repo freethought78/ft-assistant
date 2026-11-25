@@ -84,13 +84,20 @@ def check_keyword(word):
 # Kept deliberately few (at most about 7 commands in all): see the voice commands plan in
 # docs/design-notes.md. Each needs to be an everyday word, unlikely as the start of a request.
 SPOKEN_COMMANDS = {"setup": "setup", "set up": "setup", "help": "help", "stop": "stop",
-                   "undo": "undo"}
+                   "undo": "undo", "send": "send", "close": "close"}
+# What Whisper sometimes writes for a short command ("Assistant send" came back as "Assistant
+# sent" in the user's tests, 2026-11-25). Only when it's the whole rest of the dictation, so
+# "Assistant, sent items folder" stays a request.
+SPOKEN_COMMANDS.update({"sent": "send", "cent": "send", "scent": "send", "sends": "send",
+                        "closed": "close", "clothes": "close", "closes": "close",
+                        "undue": "undo", "un do": "undo", "stopped": "stop", "stops": "stop",
+                        "setups": "setup"})
 # "<word> new topic" starts a new conversation, and may be followed by a request after a pause
 # ("Assistant, new topic. Check the build."). The pause (punctuation from Whisper) is needed, so
 # "Assistant, new topic ideas for the blog" stays an ordinary request.
 _NEW_TOPIC_RE = re.compile(r"^new[\s-]+topic(?:\s*$|[.,:;!?]+\s*(.*)$)", re.I | re.S)
 # Without an assistant ("Dictation only"), only these still mean something.
-DICTATION_ONLY_COMMANDS = ("setup", "help", "undo")
+DICTATION_ONLY_COMMANDS = ("setup", "help", "undo", "send")
 
 
 def route(text, dictation_only=False, keyword=DEFAULT_KEYWORD):
@@ -109,7 +116,7 @@ def parse_command(text, keyword=DEFAULT_KEYWORD):
     m = _FIRST_WORD_RE.match(text)
     if not m or m.group(1).casefold() != (keyword or DEFAULT_KEYWORD).casefold():
         return Command("dictate", text)
-    rest = _strip_leading_punct(m.group(2))
+    rest = drop_echo(_strip_leading_punct(m.group(2)), keyword or DEFAULT_KEYWORD)
     # The whole rest must be the command: "Assistant setup" / "Assistant, set up." / "Assistant
     # set-up" (Whisper varies the spelling), "Assistant stop." But "Assistant, stop the server"
     # is a request.
@@ -122,14 +129,32 @@ def parse_command(text, keyword=DEFAULT_KEYWORD):
     return Command("assistant", rest)
 
 
-# The command word is always given to Whisper as hint words, "<word>, <word> setup", ...: without
-# them it sometimes drops a leading "Assistant" (tested 2026-11-18: 13/14 -> 14/14 on both
-# large-v3-turbo and small.en). A list works better than the single word. Each voice command is
-# a hint too, so it's caught reliably; too many hints could make Whisper "hear" them in normal
-# speech, one more reason to keep the commands few.
+def drop_echo(rest, keyword):
+    """What follows the command word, without the command word Whisper sometimes echoes from its
+    hints on short commands: "Assistant, help, Assistant, help." or "Assistant send, Assistant"
+    (found 2026-11-25: "Assistant" alone was typed into the assistant's window as a request). An
+    echo is the word alone, or after a pause with nothing or the same words again after it."""
+    words = re.findall(r"[^\W\d_]+", rest.lower())
+    if words and all(w == keyword.casefold() for w in words):
+        return ""
+    m = re.search(rf"[,.;:!?]\s*{re.escape(keyword)}\b[\s,.;:!?]*(.*)$", rest, re.I | re.S)
+    if m:
+        first, after = rest[:m.start()], m.group(1)
+        norm = lambda t: re.sub(r"[^a-z]+", " ", t.lower()).strip()   # noqa: E731
+        if not norm(after) or norm(after) == norm(first):
+            return first.strip()
+    return rest
+
+
+# Whisper is always given hint words: the command word, then each voice command's own words.
+# Without them it sometimes drops a leading "Assistant" (tested 2026-11-18: 13/14 -> 14/14). The
+# command word is in it once: phrases ("Assistant setup, Assistant help, ...") made Whisper echo
+# them on short commands, and the word alone once made it repeat "Assistant" endlessly (tested
+# 2026-11-25 on 18 synthetic clips: word once + bare words 18/18, 8 phrases 15/18, the 6 phrases of
+# 0.5.0 17/18, the word alone 17/18).
 def keyword_hints(keyword=DEFAULT_KEYWORD):
     k = keyword or DEFAULT_KEYWORD
-    return (k, f"{k} setup", f"{k} help", f"{k} stop", f"{k} undo", f"{k} new topic")
+    return (k, "setup", "help", "stop", "undo", "new topic", "send", "close")
 
 
 def build_hotwords(vocabulary_words, keyword=DEFAULT_KEYWORD):

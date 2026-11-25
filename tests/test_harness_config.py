@@ -17,44 +17,6 @@ class HarnessCommands(unittest.TestCase):
                          ["opencode", str(folder), "--prompt", "fix it"])
         self.assertEqual(harness.HARNESSES["opencode"].argv(folder, ""), ["opencode", str(folder)])
 
-    def test_argv_resume(self):
-        folder = Path("/f")
-        self.assertEqual(harness.HARNESSES["claude"].argv(folder, "go on", True),
-                         ["claude", "--continue", "go on"])
-        self.assertEqual(harness.HARNESSES["claude"].argv(folder, "", True), ["claude", "--continue"])
-        self.assertEqual(harness.HARNESSES["opencode"].argv(folder, "go on", "ses_1"),
-                         ["opencode", "/f", "--session", "ses_1", "--prompt", "go on"])
-
-    def test_last_conversation_claude(self):
-        with tempfile.TemporaryDirectory() as home, \
-                mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(Path(home) / ".claude")}):
-            folder = "/home/u/FT Assistant sessions"
-            self.assertIsNone(harness.last_conversation("claude", folder))
-            d = harness.claude_project_dir(folder)
-            self.assertEqual(d.name, "-home-u-FT-Assistant-sessions")
-            d.mkdir(parents=True)
-            (d / "abc.jsonl").write_text("{}")
-            self.assertTrue(harness.last_conversation("claude", folder))
-
-    def test_last_conversation_opencode(self):
-        import sqlite3
-        with tempfile.TemporaryDirectory() as home, \
-                mock.patch.object(harness.Path, "home", return_value=Path(home)):
-            self.assertIsNone(harness.last_conversation("opencode", "/s"))
-            db = Path(home, ".local/share/opencode/opencode.db")
-            db.parent.mkdir(parents=True)
-            con = sqlite3.connect(db)
-            con.execute("create table session (id text, directory text, parent_id text, "
-                        "time_archived integer, time_updated integer)")
-            con.executemany("insert into session values (?,?,?,?,?)", [
-                ("old", "/s", None, None, 1), ("new", "/s", None, None, 5),
-                ("child", "/s", "new", None, 9), ("gone", "/s", None, 3, 8),
-                ("other", "/elsewhere", None, None, 10)])
-            con.commit()
-            con.close()
-            self.assertEqual(harness.last_conversation("opencode", "/s"), "new")
-            self.assertIsNone(harness.last_conversation("opencode", "/nothing"))
-
     def test_terminal_command(self):
         which_gnome = lambda name: "/usr/bin/" + name if name == "gnome-terminal" else None  # noqa: E731
         self.assertEqual(harness.terminal_command(["claude", "hi"], "/f", which=which_gnome),

@@ -2,7 +2,7 @@
 word. Opened by the "Voice commands..." button on the setup screen, or by saying "<word> help"
 (then as its own process: python -m ft_assistant.voice_commands).
 
-The list stays short on purpose (at most about 7 commands): FT Assistant should stay simple and
+The list stays short on purpose (at most about 9 commands; 7 until 2026-11-25): FT Assistant should stay simple and
 easy to understand out of the box. Explanations live here, under "Good to know", one sentence
 each, instead of on the setup screen (the user's decision, 2026-11-23). See the voice commands
 plan and "Setup screen: less on it" in docs/design-notes.md."""
@@ -15,8 +15,10 @@ from . import config, keys
 # (what to say, what it does, works without an assistant ("Dictation only"))
 COMMANDS = (
     ("{w}, ...", "Sends what you say after it to your assistant as a request.", False),
-    ("{w}", "Opens your assistant's window, with the current conversation.", False),
+    ("{w}", "Brings your assistant's window to the front, or opens a new one.", False),
     ("{w} new topic, ...", "Starts a new conversation, with what you say after it.", False),
+    ("{w} close", "Closes your assistant's window, which ends the conversation.", False),
+    ("{w} send", "Presses Enter, to send what you've dictated.", True),
     ("{w} stop", "Stops what your assistant is doing right now, like pressing Esc in its window.",
      False),
     ("{w} undo", "Removes what it just typed, if you haven't typed or clicked since.", True),
@@ -32,7 +34,7 @@ def command_list(word, dictation_only=False):
             if always or not dictation_only]
 
 
-def notes(word, dictation_only=False, quiet_gap=0):
+def notes(word, dictation_only=False):
     """The "Good to know" lines under the list: one sentence each."""
     out = [f"Anything you say without \"{word}\" first is typed where your cursor is."]
     if dictation_only:
@@ -41,15 +43,14 @@ def notes(word, dictation_only=False, quiet_gap=0):
     else:
         out.append(f"Dictation never leaves this computer; requests that start with \"{word}\" "
                    "go to your assistant's online AI service.")
-        if quiet_gap:
-            out.append(f"After {quiet_gap} quiet minutes, \"{word}, ...\" starts a new "
-                       "conversation by itself.")
+        out.append("A conversation lasts while its window is open; after you close it, the next "
+                   "request starts a new one.")
         out.append("When your assistant asks to approve something, answer with the keyboard: "
                    "voice never approves anything.")
     return out
 
 
-def fill(win, word, key_name, dictation_only, base_px, on_close, quiet_gap=0):
+def fill(win, word, key_name, dictation_only, base_px, on_close):
     """Put the list into `win` (a Tk root or Toplevel, already themed)."""
     pad = round(1.2 * base_px)
     wrap = round(26 * base_px)
@@ -68,7 +69,7 @@ def fill(win, word, key_name, dictation_only, base_px, on_close, quiet_gap=0):
     ttk.Label(f, text="Good to know", style="Head.TLabel").grid(
         row=r, columnspan=2, sticky="w", pady=(pad, 2))
     r += 1
-    for line in notes(word, dictation_only, quiet_gap):
+    for line in notes(word, dictation_only):
         ttk.Label(f, text=line, wraplength=wrap + round(8 * base_px), style="Note.TLabel").grid(
             row=r, columnspan=2, sticky="w", pady=(4, 0))
         r += 1
@@ -97,14 +98,14 @@ def place(win, near=None):
     win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
 
-def open_from_setup(parent, word, key_name, dictation_only, base_px, quiet_gap=0):
+def open_from_setup(parent, word, key_name, dictation_only, base_px):
     """The window over the setup screen (shares its look). Returns the Toplevel."""
     top = tk.Toplevel(parent)
     top.withdraw()
     top.title(TITLE)
     top.transient(parent)
     top.configure(bg=parent.cget("bg"))
-    fill(top, word, key_name, dictation_only, base_px, top.destroy, quiet_gap)
+    fill(top, word, key_name, dictation_only, base_px, top.destroy)
     place(top, parent)
     top.deiconify()
     return top
@@ -122,7 +123,7 @@ def main():
     family, base_px, _ = setup_ui.desktop_look(root)
     setup_ui.apply_dark_theme(root, family, base_px)
     fill(root, settings.keyword, keys.display_name(settings.trigger), settings.dictation_only,
-         base_px, root.destroy, settings.quiet_gap_minutes)
+         base_px, root.destroy)
     place(root)
     root.deiconify()
     root.lift()

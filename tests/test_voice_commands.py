@@ -12,12 +12,14 @@ except ImportError:
 class CommandList(unittest.TestCase):
     def test_lists_every_command_with_the_users_word(self):
         said = [say for say, _ in voice_commands.command_list("Jarvis")]
-        self.assertEqual(said, ["Jarvis, ...", "Jarvis", "Jarvis new topic, ...", "Jarvis stop",
-                                "Jarvis undo", "Jarvis setup", "Jarvis help"])
+        self.assertEqual(said, ["Jarvis, ...", "Jarvis", "Jarvis new topic, ...", "Jarvis close",
+                                "Jarvis send", "Jarvis stop", "Jarvis undo", "Jarvis setup",
+                                "Jarvis help"])
 
     def test_dictation_only_shows_only_what_works(self):
         said = [say for say, _ in voice_commands.command_list("Assistant", dictation_only=True)]
-        self.assertEqual(said, ["Assistant undo", "Assistant setup", "Assistant help"])
+        self.assertEqual(said, ["Assistant send", "Assistant undo", "Assistant setup",
+                                "Assistant help"])
         self.assertIn("choose one on the setup screen",
                       " ".join(voice_commands.notes("Assistant", dictation_only=True)))
 
@@ -28,30 +30,32 @@ class CommandList(unittest.TestCase):
         self.assertIn("nothing you say is sent anywhere",
                       " ".join(voice_commands.notes("Jarvis", dictation_only=True)))
 
-    def test_the_quiet_gap_is_explained(self):
-        self.assertIn("After 15 quiet minutes, \"Assistant, ...\" starts a new conversation",
-                      " ".join(voice_commands.notes("Assistant", quiet_gap=15)))
-        self.assertNotIn("quiet", " ".join(voice_commands.notes("Assistant", quiet_gap=0)))
-        self.assertNotIn("quiet", " ".join(voice_commands.notes("Assistant", True, 15)))
+    def test_conversations_last_while_the_window_is_open(self):
+        self.assertIn("lasts while its window is open",
+                      " ".join(voice_commands.notes("Assistant")))
+        self.assertNotIn("window is open", " ".join(voice_commands.notes("Assistant", True)))
 
     def test_each_note_is_one_sentence(self):
         # Keep it simple: one sentence per note, nothing long to read.
         for dictation_only in (False, True):
-            for line in voice_commands.notes("Assistant", dictation_only, quiet_gap=15):
+            for line in voice_commands.notes("Assistant", dictation_only):
                 self.assertEqual(line.count(". "), 0, line)
                 self.assertLess(len(line), 140, line)
 
     def test_stays_short(self):
-        # FT Assistant should stay simple: at most about 7 voice commands, ever.
-        self.assertLessEqual(len(voice_commands.COMMANDS), 7)
+        # FT Assistant should stay simple: at most about 9 voice commands (7 until the user
+        # added "send" and "close", 2026-11-25).
+        self.assertLessEqual(len(voice_commands.COMMANDS), 9)
 
     def test_every_listed_command_is_understood(self):
         for say, _ in voice_commands.command_list("Assistant"):
             if say.endswith("..."):
                 continue
             kind = textproc.parse_command(say).kind
-            self.assertIn(kind, ("assistant", "setup", "help", "stop", "undo"), say)
-            self.assertIn(say, textproc.keyword_hints("Assistant"))    # a Whisper hint too
+            self.assertIn(kind, ("assistant", "setup", "help", "stop", "undo", "send", "close"),
+                          say)
+            words = say.split(" ", 1)[1] if " " in say else say      # its words are a hint too
+            self.assertIn(words, textproc.keyword_hints("Assistant"))
 
 
 @unittest.skipIf(app is None, "numpy isn't installed")

@@ -43,8 +43,9 @@ assistant you can hand a quick task or question to without typing.
   use the assistant's **full desktop app or terminal in that project's own folder**. FT Assistant
   still helps there: dictate into it like into any other window.
 
-The assistant's conversations from FT Assistant are kept short on purpose (see
-[Conversations](#conversations)), which suits quick requests and keeps answers fast.
+A conversation with the assistant lasts as long as its window is open (see
+[Conversations](#conversations)): close the window when you're done, and the next request starts
+fresh, which suits quick requests and keeps answers fast.
 
 ## Requirements
 
@@ -89,7 +90,9 @@ menu or app menu as **FT Assistant**, **FT Assistant setup** and **Uninstall FT 
    cursor is.
 
 - **Works in any program:** the text is typed as if you'd typed it yourself.
-- **Caps Lock** is never left switched on when it's your Assistant key.
+- **Your Assistant key is FT Assistant's alone:** whether it's a key or a mouse button, other
+  programs never receive it, so pressing it over another window doesn't click or activate that
+  window. Caps Lock is never left switched on when it's your Assistant key.
 - **Short taps and silence are ignored,** and so are the stock phrases Whisper sometimes makes up
   on silence (such as "Thank you.").
 - **Background audio** (music, a video) is fine.
@@ -105,8 +108,10 @@ by:
 | You say | What happens |
 |---|---|
 | "Assistant, *request*" | The request goes to your assistant (see [Talking to your assistant](#talking-to-your-assistant)). |
-| "Assistant" | Your assistant's window opens, with the current conversation. |
+| "Assistant" | Your assistant's window comes to the front, or a new one opens. |
 | "Assistant new topic, *request*" | A new conversation starts, with the request if you add one after a short pause. |
+| "Assistant close" | Your assistant's window closes, which ends the conversation. |
+| "Assistant send" | Presses Enter, to send what you've dictated (in any program). |
 | "Assistant stop" | Your assistant stops what it's doing right now, like pressing Esc in its window. |
 | "Assistant undo" | Removes what FT Assistant just typed, if you haven't typed or clicked since. |
 | "Assistant setup" | The setup screen opens. |
@@ -120,7 +125,12 @@ Anything you say without the command word first is typed where your cursor is.
 - **"Assistant new topic"** needs a short pause after "new topic" if you add a request ("Assistant,
   new topic. Check the build."). Without the pause, "Assistant, new topic ideas for my blog" is an
   ordinary request.
-- **Dictation only** (no assistant): only "undo", "setup" and "help" work; anything else is typed.
+- **"Assistant send"** is handy after dictating a message or a prompt: it sends it without
+  reaching for the keyboard.
+- **"Assistant close"** only closes the window FT Assistant opened for your assistant, never any
+  other window. It stops any work in progress first.
+- **Dictation only** (no assistant): only "send", "undo", "setup" and "help" work; anything else is
+  typed.
 
 ## Talking to your assistant
 
@@ -136,34 +146,34 @@ Anything you say without the command word first is typed where your cursor is.
 
 ### Conversations
 
-FT Assistant keeps **one ongoing conversation** with your assistant, so requests don't pile up into
-many small ones. It's started in a neutral folder of its own, "FT Assistant sessions" in your user
-folder, never in one of your projects.
+**A conversation lasts as long as its window.** What you see is what the assistant knows:
 
-- **After 15 quiet minutes,** "Assistant, ..." from another window starts a new conversation by
-  itself, so unrelated requests don't mix and answers stay fast. The assistant's own work counts as
-  activity, so a long task doesn't count as quiet. Saying just "Assistant" still shows the current
-  conversation.
-- **"Assistant new topic"** starts a new conversation any time.
-- **If the window is open,** the new conversation starts in it (FT Assistant types `/clear` for
-  Claude Code or `/new` for OpenCode). The old conversation is kept and can be reopened there
-  (`/resume` in Claude Code, the session list in OpenCode).
+- **While the window is open,** every request continues that conversation, however long it's been
+  and however long the assistant has been working.
+- **Close the window** (or say "Assistant close") when you're done. The next request opens a new
+  window with a fresh conversation.
+- **"Assistant new topic"** starts a fresh conversation without closing the window (FT Assistant
+  types `/clear` for Claude Code or `/new` for OpenCode).
+- **Earlier conversations are kept** and can be reopened inside the assistant (`/resume` in Claude
+  Code, the session list in OpenCode).
 - **Remembering earlier work:** Claude Code keeps its own memory of what you've worked on and
   brings it into new conversations. OpenCode doesn't, so tell it what it needs to know, or reopen
   the earlier conversation.
-- **Talking inside the assistant's window** always continues that conversation, however long ago it
-  was.
+
+Conversations start in a neutral folder of FT Assistant's own, "FT Assistant sessions" in your user
+folder, never in one of your projects.
 
 ## The setup screen
 
 Open it by saying **"Assistant setup"**, or from your Start menu or app menu (**FT Assistant
-setup**). While it's open, the Assistant key is paused.
+setup**). Your Assistant key keeps working while it's open.
 
 - **Assistant:** Dictation only, OpenCode or Claude Code. If one isn't installed yet, its
   **Install...** button gets the latest version from its official source, and the screen notices
   when it's done.
 - **Assistant key:** click **Change key**, then press the key or mouse button you want. Tips on good
-  choices show while you choose.
+  choices show while you choose. The new key works right away, so you can try it before saving:
+  **Save** keeps it, **Cancel** goes back to your old one.
 - **Command word:** "Assistant" by default. Any single word works; a less common word is caught more
   reliably and won't clash with ordinary sentences. **Voice commands...** shows the list of
   commands with your word, and a few things good to know.
@@ -239,9 +249,7 @@ screen. It removes only FT Assistant's own files; anything else in the same fold
 
 - **Word list:** `vocabulary.txt` in the settings folder, one word or name per line (lines starting
   with `#` are comments). Changes count from your next dictation.
-- **Settings:** `settings.json`, written by the setup screen. One setting has no control on the
-  screen: `"quiet_gap_minutes"` (15 by default) is how long a conversation must be quiet before
-  "Assistant, ..." starts a new one; 0 turns that off.
+- **Settings:** `settings.json`, written by the setup screen.
 
 ## Development
 

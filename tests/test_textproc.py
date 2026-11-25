@@ -81,6 +81,48 @@ class ParseCommand(unittest.TestCase):
         # No assistant ("Dictation only"): just typed.
         self.assertEqual(route("Assistant new topic", dictation_only=True).kind, "dictate")
 
+    def test_echoed_command_word_is_dropped(self):
+        # Whisper sometimes echoes the command word from its hints on short commands.
+        self.assertEqual(parse_command("Assistant, Assistant."), Command("assistant", ""))
+        self.assertEqual(parse_command("Assistant Assistant Assistant"), Command("assistant", ""))
+        self.assertEqual(parse_command("Assistant send, Assistant"), Command("send"))
+        self.assertEqual(parse_command("Assistant, help, Assistant, help."), Command("help"))
+        self.assertEqual(parse_command("Assistant undo, Assistant, undo"), Command("undo"))
+        self.assertEqual(parse_command("Jarvis, stop. Jarvis.", "Jarvis"), Command("stop"))
+        # Real requests that mention the word are kept whole.
+        self.assertEqual(parse_command("Assistant, rename the assistant folder."),
+                         Command("assistant", "rename the assistant folder."))
+        self.assertEqual(parse_command("Assistant, open mail. Assistant, then the calendar."),
+                         Command("assistant", "open mail. Assistant, then the calendar."))
+
+    def test_misheard_commands(self):
+        # Whisper sometimes writes a sound-alike for a short command.
+        for said, kind in (("Assistant sent.", "send"), ("Assistant, cent.", "send"),
+                           ("Assistant, closed.", "close"), ("Assistant clothes", "close"),
+                           ("Assistant undue.", "undo"), ("Assistant, stopped.", "stop")):
+            self.assertEqual(parse_command(said), Command(kind), said)
+        # Only as the whole command: longer dictation is a request as usual.
+        self.assertEqual(parse_command("Assistant, sent items folder."),
+                         Command("assistant", "sent items folder."))
+        self.assertEqual(parse_command("Assistant, closed tickets this week."),
+                         Command("assistant", "closed tickets this week."))
+        # "sent" also presses Enter without an assistant ("Dictation only").
+        self.assertEqual(route("Assistant sent.", dictation_only=True), Command("send"))
+
+    def test_send_and_close(self):
+        for s in ("Assistant send", "Assistant, send.", "assistant Send!"):
+            self.assertEqual(parse_command(s), Command("send"), s)
+        for s in ("Assistant close", "Assistant, close."):
+            self.assertEqual(parse_command(s), Command("close"), s)
+        # More words make it a request.
+        self.assertEqual(parse_command("Assistant, close the browser."),
+                         Command("assistant", "close the browser."))
+        self.assertEqual(parse_command("Assistant, send an email to Sam."),
+                         Command("assistant", "send an email to Sam."))
+        # Without an assistant: "send" still presses Enter, "close" is just typed.
+        self.assertEqual(route("Assistant send", dictation_only=True), Command("send"))
+        self.assertEqual(route("Assistant close", dictation_only=True).kind, "dictate")
+
     def test_undo(self):
         for s in ("Assistant undo", "Assistant, undo.", "assistant Undo!"):
             self.assertEqual(parse_command(s), Command("undo"), s)
@@ -135,14 +177,12 @@ class CommandWord(unittest.TestCase):
 
 class Hotwords(unittest.TestCase):
     def test_keyword_hints_always_first(self):
-        hints = ("Assistant, Assistant setup, Assistant help, Assistant stop, Assistant undo, "
-                 "Assistant new topic")
+        hints = "Assistant, setup, help, stop, undo, new topic, send, close"
         self.assertEqual(build_hotwords([]), hints)
         self.assertEqual(build_hotwords(["Discord", "Claude", "assistant", " "]),
                          hints + ", Discord, Claude")
         self.assertEqual(build_hotwords(["Claude"], "Jarvis"),
-                         "Jarvis, Jarvis setup, Jarvis help, Jarvis stop, Jarvis undo, "
-                         "Jarvis new topic, Claude")
+                         "Jarvis, setup, help, stop, undo, new topic, send, close, Claude")
 
 
 if __name__ == "__main__":
