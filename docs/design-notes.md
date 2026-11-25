@@ -112,6 +112,15 @@ Last updated: 2026-11-17 (full review and cleanup)
   - Save on the setup screen keeps settings it doesn't show.
 
   Tested live on Linux; not on Windows where the bottle couldn't.
+- **v0.6.0** (2026-11-25): from the user's live testing of 0.5.0:
+  - conversations last as long as the assistant's window (the 15-minute gap is gone);
+  - "<word> close" and "<word> send" (9 voice commands);
+  - Whisper's echoed command words dropped, bare-word hints, and sound-alikes ("sent" -> send);
+  - Linux: the Assistant mouse button grabbed, so the window under the cursor never gets it;
+  - the Assistant key works while setup is open, and a new key before Save.
+
+  Tested live on Linux (the trial key before Save not yet with a real key press); not on Windows
+  where the bottle couldn't.
 
 ## Carried over from the current tool (unchanged)
 
